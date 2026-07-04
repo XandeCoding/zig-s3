@@ -2,11 +2,11 @@
     .name = .zig_s3,
     .version = "0.2.0",
     .fingerprint = 0xf58a772c84221497,
-    .minimum_zig_version = "0.13.0",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .dotenv = .{
-            .url = "https://github.com/dying-will-bullet/dotenv/archive/refs/tags/v0.2.0.tar.gz",
-            .hash = "12201347c20e8c4cb161f16bba30e51da17c32b89ef887b9b8932d6ed135ee5a6d01",
+            .url = "git+https://github.com/dying-will-bullet/dotenv.git#f6dff7ce2c39ceaafd00114c7d0674376cd82b87",
+            .hash = "dotenv-0.3.0-hfaNFtm3AACGiIZx5jDPHB4Q1QGs9BEMKH-sq32ZxRXa",
         },
     },
     .paths = .{

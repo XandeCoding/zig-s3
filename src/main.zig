@@ -31,42 +31,37 @@ const std = @import("std");
 const s3 = @import("s3/lib.zig");
 const dotenv = @import("dotenv");
 
-fn loadEnvVars() !s3.S3Config {
-    const heapAlloc = std.heap.page_allocator;
+fn loadEnvVars(init: std.process.Init) !s3.S3ClientConfig {
+    try dotenv.loadFrom(init.gpa, init.io, init.environ_map, ".env", .{});
+    const env_map = init.environ_map;
 
-    const env_map = try dotenv.getDataFrom(heapAlloc, ".env");
-
-    const access_key = env_map.get("MINIO_ACCESS_KEY") orelse
+    const access_key = env_map.get("S3_ACCESS_KEY") orelse
         return error.MissingAccessKey;
-    const secret_key = env_map.get("MINIO_SECRET_KEY") orelse
+    const secret_key = env_map.get("S3_SECRET_KEY") orelse
         return error.MissingSecretKey;
-    const endpoint = env_map.get("MINIO_PUBLIC_ENDPOINT") orelse
+    const endpoint = env_map.get("S3_PUBLIC_ENDPOINT") orelse
         return error.MissingEndpoint;
 
-    return s3.S3Config{
-        .access_key_id = access_key.?,
-        .secret_access_key = secret_key.?,
+    return s3.S3ClientConfig{
+        .access_key_id = access_key,
+        .secret_access_key = secret_key,
         .region = "us-west-1",
-        .endpoint = endpoint.?,
+        .endpoint = endpoint,
     };
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     // Get allocator
     std.log.info("Initializing GeneralPurposeAllocator", .{});
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) {
-        std.log.warn("Memory allocator leaked", .{});
-    };
-    const allocator = gpa.allocator();
+    const allocator = init.gpa;
 
     // Initialize S3 client
     std.log.info("Loading environment variables for S3 configuration", .{});
-    const config = try loadEnvVars();
+    const config = try loadEnvVars(init);
     std.log.info("Environment variables loaded successfully", .{});
 
     std.log.info("Initializing S3 client", .{});
-    var client = try s3.S3Client.init(allocator, config);
+    var client = try s3.S3Client.init(allocator, init.io, config);
     defer client.deinit();
     std.log.info("S3 client initialized successfully", .{});
 
@@ -88,11 +83,37 @@ pub fn main() !void {
     }
 
     // Print bucket information
-    const stdout = std.io.getStdOut().writer();
-    try stdout.writeAll("\nAvailable buckets:\n");
+    const stdout = std.Io.File.stdout();
+    try stdout.writeStreamingAll(init.io, "\nAvailable buckets:\n");
     for (buckets) |bucket| {
         std.log.info("Bucket found: {s}", .{bucket.name});
-        try stdout.print("- {s}\n", .{bucket.name});
+        const fmt_bucket_name = try std.fmt.allocPrint(allocator, "- {s}\n", .{bucket.name});
+        defer allocator.free(fmt_bucket_name);
+        try stdout.writeStreamingAll(init.io, fmt_bucket_name);
     }
     std.log.info("Bucket information printed", .{});
+
+    const bucket_name = "pagination-test-bucket";
+    var uploader = client.uploader();
+    try uploader.uploadString(bucket_name, "example.txt", "String de teste");
+    try uploader.uploadJson(bucket_name, "example.json", .{ .example = "teste" });
+    try uploader.uploadFile(bucket_name, "example-relative.data", "./example.data");
+    try uploader.uploadFile(bucket_name, "example-absolute.data", "/home/alexandre/Documentos/projetos/open-source/zig-s3/example-abs.data");
+    const objects = try client.listObjects(bucket_name, .{
+        .max_keys=7,
+        .start_after="folder2/file1.txt"
+    });
+
+    for (objects) |object| {
+        std.log.info("Object found: {s}", .{object.key});
+    }
+
+    defer {
+        for (objects) |object| {
+            allocator.free(object.key);
+            allocator.free(object.last_modified);
+            allocator.free(object.etag);
+        }
+        allocator.free(objects);
+    }
 }

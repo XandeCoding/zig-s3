@@ -3,6 +3,7 @@ const s3 = @import("s3");
 const dotenv = @import("dotenv");
 
 const testing = std.testing;
+const io = testing.io;
 const allocator = testing.allocator;
 
 // At the top of the file, add ConnectionRefused to possible errors
@@ -17,28 +18,34 @@ const TestError = error{
     // ... other errors ...
 };
 
-fn loadEnvVars() !s3.S3Config {
-    const heapAlloc = std.heap.page_allocator;
+fn loadEnvVars() !std.process.Environ.Map {
+    var env_map = try std.testing.environ.createMap(allocator);
+    try dotenv.loadFrom(allocator, io, &env_map, ".env", .{});
 
-    const env_map = try dotenv.getDataFrom(heapAlloc, ".env");
+    return env_map;
+}
 
-    const access_key = env_map.get("MINIO_ACCESS_KEY") orelse
+fn createS3ClientConfig(env_map: std.process.Environ.Map) !s3.S3ClientConfig {
+    const access_key = env_map.get("S3_ACCESS_KEY") orelse
         return error.MissingAccessKey;
-    const secret_key = env_map.get("MINIO_SECRET_KEY") orelse
+    const secret_key = env_map.get("S3_SECRET_KEY") orelse
         return error.MissingSecretKey;
-    const endpoint = env_map.get("MINIO_PUBLIC_ENDPOINT") orelse
+    const endpoint = env_map.get("S3_PUBLIC_ENDPOINT") orelse
         return error.MissingEndpoint;
 
-    return s3.S3Config{
-        .access_key_id = access_key.?,
-        .secret_access_key = secret_key.?,
+    return s3.S3ClientConfig{
+        .access_key_id = access_key,
+        .secret_access_key = secret_key,
         .region = "us-west-1",
-        .endpoint = endpoint.?,
+        .endpoint = endpoint,
     };
 }
 
 test "load env vars" {
-    const config = try loadEnvVars();
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
+
+    const config = try createS3ClientConfig(env_map);
     std.debug.print("Loaded S3 Config: {?s}\n", .{config.endpoint});
 }
 
@@ -46,22 +53,28 @@ test "initialize client" {
     std.debug.print("\n=== Starting client initialization test ===\n", .{});
 
     std.debug.print("Loading env vars...\n", .{});
-    const config = try loadEnvVars();
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
+
+    const config = try createS3ClientConfig(env_map);
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     std.debug.print("Initializing client...\n", .{});
-    var client = try s3.S3Client.init(allocator, config);
+    var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
     std.debug.print("Client initialized successfully\n", .{});
 }
-
+// TODO: ADD LIST OBJECT IN A EMPTY BUCKET
 test "validate endpoint" {
     std.debug.print("\n=== Starting endpoint validation test ===\n", .{});
 
     // Initialize client
     std.debug.print("Loading env vars...\n", .{});
-    const config = try loadEnvVars();
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
+
+    const config = try createS3ClientConfig(env_map);
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     // Validate endpoint is not empty and accessible
@@ -72,7 +85,7 @@ test "validate endpoint" {
         }
         std.debug.print("Using endpoint: {s}\n", .{endpoint});
         std.debug.print("Access Key ID: {s}\n", .{config.access_key_id});
-        std.debug.print("Region: {s}\n", .{config.region});
+        std.debug.print("Region: {?s}\n", .{config.region});
 
         // Try to parse the endpoint URL
         const uri = std.Uri.parse(endpoint) catch |err| {
@@ -98,11 +111,14 @@ test "create simple bucket" {
 
     // Initialize client
     std.debug.print("Loading env vars...\n", .{});
-    const config = try loadEnvVars();
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
+
+    const config = try createS3ClientConfig(env_map);
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     std.debug.print("Initializing client...\n", .{});
-    var client = try s3.S3Client.init(allocator, config);
+    var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
     std.debug.print("Client initialized successfully\n", .{});
 
@@ -141,190 +157,218 @@ test "create simple bucket" {
     std.debug.print("Bucket '{s}' deleted successfully\n", .{bucket_name});
 }
 
-// test "upload simple file to test-bucket" {
-//     std.debug.print("\n=== Starting simple file upload test ===\n", .{});
+test "upload simple file to test-bucket" {
+    std.debug.print("\n=== Starting simple file upload test ===\n", .{});
 
-//     // Initialize client
-//     const config = try loadEnvVars();
-//     var client = try s3.S3Client.init(allocator, config);
-//     defer client.deinit();
+    // Initialize client
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
 
-//     const bucket_name = "test-bucket";
-//     const file_content = "Hello from Zig!";
-//     const file_key = "hello.txt";
+    const config = try createS3ClientConfig(env_map);
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
-//     // Create uploader and upload string
-//     var uploader = client.uploader();
-//     uploader.uploadString(bucket_name, file_key, file_content) catch |err| {
-//         std.debug.print("Failed to upload file: {any}\n", .{err});
-//         return err;
-//     };
+    const bucket_name = "test-bucket";
+    const file_content = "Hello from Zig!";
+    const file_key = "hello.txt";
 
-//     std.debug.print("Successfully uploaded file '{s}' to bucket '{s}'\n", .{ file_key, bucket_name });
+    // Create bucket just to insure the upload will be successfull
+    std.debug.print("Creating bucket '{s}'...\n", .{bucket_name});
+    try client.createBucket(bucket_name);
+    defer _ = client.deleteBucket(bucket_name) catch {};
 
-//     // Verify the upload by downloading the content
-//     const downloaded = client.getObject(bucket_name, file_key) catch |err| {
-//         std.debug.print("Failed to download file: {any}\n", .{err});
-//         return err;
-//     };
-//     defer allocator.free(downloaded);
+    // Create uploader and upload string
+    var uploader = client.uploader();
+    uploader.uploadString(bucket_name, file_key, file_content) catch |err| {
+        std.debug.print("Failed to upload file: {any}\n", .{err});
+        return err;
+    };
 
-//     try testing.expectEqualStrings(file_content, downloaded);
-//     std.debug.print("Successfully verified file content\n", .{});
-// }
+    std.debug.print("Successfully uploaded file '{s}' to bucket '{s}'\n", .{ file_key, bucket_name });
 
-// test "full client lifecycle" {
-//     // Initialize client
-//     var client = try s3.S3Client.init(allocator, try loadEnvVars());
-//     defer client.deinit();
+    // Verify the upload by downloading the content
+    const downloaded = client.getObject(bucket_name, file_key) catch |err| {
+        std.debug.print("Failed to download file: {any}\n", .{err});
+        return err;
+    };
+    defer allocator.free(downloaded);
 
-//     // Create test bucket
-//     const bucket_name = "integration-test-bucket";
-//     try client.createBucket(bucket_name);
-//     defer _ = client.deleteBucket(bucket_name) catch {};
+    try testing.expectEqualStrings(file_content, downloaded);
+    std.debug.print("Successfully verified file content\n", .{});
+}
 
-//     // List buckets and verify our bucket exists
-//     const buckets = try client.listBuckets();
-//     defer {
-//         for (buckets) |bucket| {
-//             allocator.free(bucket.name);
-//             allocator.free(bucket.creation_date);
-//         }
-//         allocator.free(buckets);
-//     }
+test "full client lifecycle" {
+    std.debug.print("\n=== Starting full client lifecycle test ===\n", .{});
+    // Initialize client
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
 
-//     var found_bucket = false;
-//     for (buckets) |bucket| {
-//         if (std.mem.eql(u8, bucket.name, bucket_name)) {
-//             found_bucket = true;
-//             break;
-//         }
-//     }
-//     try testing.expect(found_bucket);
+    const config = try createS3ClientConfig(env_map);
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
-//     // Test object operations
-//     {
-//         var uploader = client.uploader();
+    // Create test bucket
+    const bucket_name = "integration-test-bucket";
+    try client.createBucket(bucket_name);
+    defer _ = client.deleteBucket(bucket_name) catch {};
 
-//         // Upload different types of content
-//         try uploader.uploadString(bucket_name, "hello.txt", "Hello, Integration Tests!");
+    // List buckets and verify our bucket exists
+    const buckets = try client.listBuckets();
+    defer {
+        for (buckets) |bucket| {
+            allocator.free(bucket.name);
+            allocator.free(bucket.creation_date);
+        }
+        allocator.free(buckets);
+    }
 
-//         const config_data = .{
-//             .app = try allocator.dupe(u8, "integration-test"),
-//             .version = try allocator.dupe(u8, "1.0.0"),
-//             .timestamp = @as(i64, @intCast(std.time.timestamp())),
-//         };
-//         defer allocator.free(config_data.app);
-//         defer allocator.free(config_data.version);
-//         try uploader.uploadJson(bucket_name, "config.json", config_data);
+    var found_bucket = false;
+    for (buckets) |bucket| {
+        if (std.mem.eql(u8, bucket.name, bucket_name)) {
+            found_bucket = true;
+            break;
+        }
+    }
+    try testing.expect(found_bucket);
+    std.debug.print("found bucket '{}'...\n", .{found_bucket});
 
-//         // Create and upload a test file
-//         const test_dir = "tmp_integration_test";
-//         std.fs.cwd().makeDir(test_dir) catch |err| {
-//             if (err != error.PathAlreadyExists) return err;
-//         };
-//         defer std.fs.cwd().deleteTree(test_dir) catch {};
+    // Test object operations
+    {
+        var uploader = client.uploader();
 
-//         const test_file = try std.fs.path.join(allocator, &[_][]const u8{ test_dir, "test.dat" });
-//         defer allocator.free(test_file);
+        // Upload different types of content
+        try uploader.uploadString(bucket_name, "hello.txt", "Hello, Integration Tests!");
+        std.debug.print("String upload succesfull...\n", .{});
 
-//         {
-//             const file = try std.fs.cwd().createFile(test_file, .{});
-//             defer file.close();
-//             try file.writeAll("Test file content");
-//         }
+        const timestamp = std.Io.Timestamp.now(io, std.Io.Clock.real).toMilliseconds();
+        const config_data = .{
+            .app = try allocator.dupe(u8, "integration-test"),
+            .version = try allocator.dupe(u8, "1.0.0"),
+            .timestamp = timestamp,
+        };
+        defer allocator.free(config_data.app);
+        defer allocator.free(config_data.version);
+        try uploader.uploadJson(bucket_name, "config.json", config_data);
 
-//         try uploader.uploadFile(bucket_name, "files/test.dat", test_file);
+        std.debug.print("config_data upload  succesfull '{}'...\n", .{config_data});
+        // Create and upload a test file
+        var directory = std.testing.tmpDir(.{});
+        const filename = "test.dat";
+        defer directory.cleanup();
 
-//         // List objects and verify
-//         const objects = try client.listObjects(bucket_name, .{});
-//         defer {
-//             for (objects) |object| {
-//                 allocator.free(object.key);
-//                 allocator.free(object.last_modified);
-//                 allocator.free(object.etag);
-//             }
-//             allocator.free(objects);
-//         }
+        // Create and write test file
+        {
+            const file = try directory.dir.createFile(io, filename, .{});
+            defer file.close(io);
+            try file.writePositionalAll(io, "Test file content", 0);
+            std.debug.print("test file created succesfull...\n", .{});
+        }
 
-//         try testing.expectEqual(@as(usize, 3), objects.len);
+        // Test file upload
+        const file_path = try directory.dir.realPathFileAlloc(io, filename, allocator);
+        defer allocator.free(file_path);
+        try uploader.uploadFile(bucket_name, "files/test.dat", file_path);
 
-//         // Download and verify content
-//         const hello_content = try client.getObject(bucket_name, "hello.txt");
-//         defer allocator.free(hello_content);
-//         try testing.expectEqualStrings("Hello, Integration Tests!", hello_content);
+        std.debug.print("test file upload succesfull...\n", .{});
+        // List objects and verify
+        const objects = try client.listObjects(bucket_name, .{});
+        defer {
+            for (objects) |object| {
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(objects);
+        }
 
-//         const config_content = try client.getObject(bucket_name, "config.json");
-//         defer allocator.free(config_content);
+        try testing.expectEqual(3, objects.len);
 
-//         // Parse and verify JSON
-//         const parsed = try std.json.parseFromSlice(
-//             @TypeOf(config_data),
-//             allocator,
-//             config_content,
-//             .{},
-//         );
-//         defer parsed.deinit();
+        // Download and verify content
+        const hello_content = try client.getObject(bucket_name, "hello.txt");
+        defer allocator.free(hello_content);
+        try testing.expectEqualStrings("Hello, Integration Tests!", hello_content);
+        std.debug.print("hello downloaded ...\n", .{});
 
-//         try testing.expectEqualStrings("integration-test", parsed.value.app);
-//         try testing.expectEqualStrings("1.0.0", parsed.value.version);
+        const config_content = try client.getObject(bucket_name, "config.json");
+        std.debug.print("config content {s}...\n", .{config_content});
+        defer allocator.free(config_content);
 
-//         // Test object deletion
-//         try client.deleteObject(bucket_name, "hello.txt");
-//         try client.deleteObject(bucket_name, "config.json");
-//         try client.deleteObject(bucket_name, "files/test.dat");
+        // Parse and verify JSON
+        const parsed = try std.json.parseFromSlice(
+            @TypeOf(config_data),
+            allocator,
+            config_content,
+            .{},
+        );
+        defer parsed.deinit();
 
-//         // Verify objects are gone
-//         const remaining_objects = try client.listObjects(bucket_name, .{});
-//         defer {
-//             for (remaining_objects) |object| {
-//                 allocator.free(object.key);
-//                 allocator.free(object.last_modified);
-//                 allocator.free(object.etag);
-//             }
-//             allocator.free(remaining_objects);
-//         }
-//         try testing.expectEqual(@as(usize, 0), remaining_objects.len);
-//     }
-// }
+        std.debug.print("parsed {}...\n", .{parsed});
+        try testing.expectEqualStrings("integration-test", parsed.value.app);
+        try testing.expectEqualStrings("1.0.0", parsed.value.version);
 
-// test "error handling" {
-//     var client = try s3.S3Client.init(allocator, try loadEnvVars());
-//     defer client.deinit();
+        // Test object deletion
+        try client.deleteObject(bucket_name, "hello.txt");
+        try client.deleteObject(bucket_name, "config.json");
+        try client.deleteObject(bucket_name, "files/test.dat");
 
-//     // Test non-existent bucket
-//     try testing.expectError(
-//         error.ConnectionRefused,
-//         client.getObject("nonexistent-bucket", "test.txt"),
-//     );
+        std.debug.print("Objects deleted...\n", .{});
+        // Verify objects are gone
+        const remaining_objects = try client.listObjects(bucket_name, .{});
+        defer {
+            for (remaining_objects) |object| {
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(remaining_objects);
+        }
+        try testing.expectEqual(0, remaining_objects.len);
+    }
+}
 
-//     // Test non-existent object
-//     const bucket_name = "error-test-bucket";
-//     try client.createBucket(bucket_name);
-//     defer _ = client.deleteBucket(bucket_name) catch {};
+test "error handling" {
+    std.debug.print("\n=== Starting error handling test ===\n", .{});
+    // Initialize client
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
 
-//     try testing.expectError(
-//         error.ObjectNotFound,
-//         client.getObject(bucket_name, "nonexistent.txt"),
-//     );
+    const config = try createS3ClientConfig(env_map);
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
-//     // Test invalid bucket names
-//     try testing.expectError(
-//         error.InvalidBucketName,
-//         client.createBucket(""),
-//     );
+    // Test non-existent bucket
+    try testing.expectError(
+        error.ObjectNotFound,
+        client.getObject("nonexistent-bucket", "test.txt"),
+    );
 
-//     try testing.expectError(
-//         error.InvalidBucketName,
-//         client.createBucket("invalid..bucket"),
-//     );
+    // Test non-existent object
+    const bucket_name = "error-test-bucket";
+    try client.createBucket(bucket_name);
+    defer _ = client.deleteBucket(bucket_name) catch {};
 
-//     // Test invalid object keys
-//     try testing.expectError(
-//         error.InvalidObjectKey,
-//         client.putObject(bucket_name, "", "test"),
-//     );
-// }
+    try testing.expectError(
+        error.ObjectNotFound,
+        client.getObject(bucket_name, "nonexistent.txt"),
+    );
+
+    // Test invalid bucket names
+    try testing.expectError(
+        error.InvalidBucketName,
+        client.createBucket(""),
+    );
+
+    try testing.expectError(
+        error.InvalidBucketName,
+        client.createBucket("invalid..bucket"),
+    );
+
+    // Test invalid object keys
+    try testing.expectError(
+        error.InvalidObjectKey,
+        client.putObject(bucket_name, "", "test"),
+    );
+}
 
 // test "pagination and prefixes" {
 //     var client = try s3.S3Client.init(allocator, try loadEnvVars());
