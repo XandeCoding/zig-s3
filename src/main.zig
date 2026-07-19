@@ -92,28 +92,4 @@ pub fn main(init: std.process.Init) !void {
         try stdout.writeStreamingAll(init.io, fmt_bucket_name);
     }
     std.log.info("Bucket information printed", .{});
-
-    const bucket_name = "pagination-test-bucket";
-    var uploader = client.uploader();
-    try uploader.uploadString(bucket_name, "example.txt", "String de teste");
-    try uploader.uploadJson(bucket_name, "example.json", .{ .example = "teste" });
-    try uploader.uploadFile(bucket_name, "example-relative.data", "./example.data");
-    try uploader.uploadFile(bucket_name, "example-absolute.data", "/home/alexandre/Documentos/projetos/open-source/zig-s3/example-abs.data");
-    const objects = try client.listObjects(bucket_name, .{
-        .max_keys=7,
-        .start_after="folder2/file1.txt"
-    });
-
-    for (objects) |object| {
-        std.log.info("Object found: {s}", .{object.key});
-    }
-
-    defer {
-        for (objects) |object| {
-            allocator.free(object.key);
-            allocator.free(object.last_modified);
-            allocator.free(object.etag);
-        }
-        allocator.free(objects);
-    }
 }

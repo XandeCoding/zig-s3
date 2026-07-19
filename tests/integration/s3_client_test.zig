@@ -65,7 +65,7 @@ test "initialize client" {
 
     std.debug.print("Client initialized successfully\n", .{});
 }
-// TODO: ADD LIST OBJECT IN A EMPTY BUCKET
+
 test "validate endpoint" {
     std.debug.print("\n=== Starting endpoint validation test ===\n", .{});
 
@@ -183,6 +183,7 @@ test "upload simple file to test-bucket" {
         std.debug.print("Failed to upload file: {any}\n", .{err});
         return err;
     };
+    defer _ = client.deleteObject(bucket_name, file_key) catch {};
 
     std.debug.print("Successfully uploaded file '{s}' to bucket '{s}'\n", .{ file_key, bucket_name });
 
@@ -302,7 +303,6 @@ test "full client lifecycle" {
         );
         defer parsed.deinit();
 
-        std.debug.print("parsed {}...\n", .{parsed});
         try testing.expectEqualStrings("integration-test", parsed.value.app);
         try testing.expectEqualStrings("1.0.0", parsed.value.version);
 
@@ -370,222 +370,230 @@ test "error handling" {
     );
 }
 
-// test "pagination and prefixes" {
-//     var client = try s3.S3Client.init(allocator, try loadEnvVars());
-//     defer client.deinit();
+test "pagination and prefixes" {
+    std.debug.print("\n=== Starting pagination and prefixes test ===\n", .{});
+    // Initialize client
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
 
-//     const bucket_name = "pagination-test-bucket";
-//     try client.createBucket(bucket_name);
-//     defer _ = client.deleteBucket(bucket_name) catch {};
+    const config = try createS3ClientConfig(env_map);
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
-//     var uploader = client.uploader();
+    const bucket_name = "pagination-test-bucket";
+    client.createBucket(bucket_name) catch {};
+    defer _ = client.deleteBucket(bucket_name) catch {};
+    std.debug.print("Bucket created: {s}...\n", .{bucket_name});
 
-//     // Create test objects with different prefixes
-//     const prefixes = [_][]const u8{ "folder1/", "folder2/", "folder3/" };
-//     var total_objects: usize = 0;
+    var uploader = client.uploader();
 
-//     for (prefixes) |prefix| {
-//         var i: usize = 0;
-//         while (i < 5) : (i += 1) {
-//             const key = try std.fmt.allocPrint(
-//                 allocator,
-//                 "{s}file{d}.txt",
-//                 .{ prefix, i },
-//             );
-//             defer allocator.free(key);
-//             const content = try std.fmt.allocPrint(
-//                 allocator,
-//                 "Content {d}",
-//                 .{i},
-//             );
-//             defer allocator.free(content);
-//             try uploader.uploadString(bucket_name, key, content);
-//             total_objects += 1;
-//         }
-//     }
+    // Create test objects with different prefixes
+    const prefixes = [_][]const u8{ "folder1/", "folder2/", "folder3/" };
+    var total_objects: usize = 0;
 
-//     // Test listing with different page sizes
-//     {
-//         const page_size: u32 = 7;
-//         var all_objects = std.ArrayList(s3.ObjectInfo).init(allocator);
-//         defer {
-//             for (all_objects.items) |object| {
-//                 allocator.free(object.key);
-//                 allocator.free(object.last_modified);
-//                 allocator.free(object.etag);
-//             }
-//             all_objects.deinit();
-//         }
+    for (prefixes) |prefix| {
+        var i: usize = 0;
+        while (i < 5) : (i += 1) {
+            const key = try std.fmt.allocPrint(
+                allocator,
+                "{s}file{d}.txt",
+                .{ prefix, i },
+            );
+            defer allocator.free(key);
+            const content = try std.fmt.allocPrint(
+                allocator,
+                "Content {d}",
+                .{i},
+            );
+            defer allocator.free(content);
+            try uploader.uploadString(bucket_name, key, content);
+            total_objects += 1;
+        }
+    }
+    std.debug.print("Files created ...\n", .{});
 
-//         var last_key: ?[]const u8 = null;
-//         while (true) {
-//             const page = try client.listObjects(bucket_name, .{
-//                 .max_keys = page_size,
-//                 .start_after = last_key,
-//             });
-//             defer {
-//                 if (last_key) |key| {
-//                     allocator.free(key);
-//                 }
-//                 allocator.free(page);
-//             }
+    // Test listing with different page sizes
+    {
+        const page_size: u32 = 7;
+        var all_objects: std.ArrayList([]u8) = .empty;
+        defer {
+            for (all_objects.items) |object| {
+                allocator.free(object);
+            }
+            all_objects.deinit(allocator);
+        }
 
-//             if (page.len == 0) break;
+        std.debug.print("All objects array created ...\n", .{});
+        var max_attempts: u16 = 10;
+        while (max_attempts > 0) {
+            max_attempts = max_attempts - 1;
+            const page = try client.listObjects(bucket_name, .{
+                .max_keys = page_size,
+                .start_after = all_objects.getLastOrNull(),
+            });
 
-//             for (page) |object| {
-//                 const key_copy = try allocator.dupe(u8, object.key);
-//                 const lm_copy = try allocator.dupe(u8, object.last_modified);
-//                 const etag_copy = try allocator.dupe(u8, object.etag);
-//                 try all_objects.append(.{
-//                     .key = key_copy,
-//                     .size = object.size,
-//                     .last_modified = lm_copy,
-//                     .etag = etag_copy,
-//                 });
-//             }
+            defer {
+                for (page) |item| {
+                    allocator.free(item.key);
+                    allocator.free(item.last_modified);
+                    allocator.free(item.etag);
+                }
+                allocator.free(page);
+            }
 
-//             if (page.len < page_size) break;
-//             last_key = try allocator.dupe(u8, page[page.len - 1].key);
-//         }
+            if (page.len == 0) break;
+            for (page) |data| {
+                const key = try allocator.dupe(u8, data.key);
+                try all_objects.append(allocator, key);
+            }
 
-//         try testing.expectEqual(total_objects, all_objects.items.len);
-//     }
+            std.debug.print("\nSlice appended: {s} ...\n", .{all_objects.getLast()});
 
-//     // Test listing with prefix
-//     for (prefixes) |prefix| {
-//         const objects = try client.listObjects(bucket_name, .{
-//             .prefix = prefix,
-//         });
-//         defer {
-//             for (objects) |object| {
-//                 allocator.free(object.key);
-//                 allocator.free(object.last_modified);
-//                 allocator.free(object.etag);
-//             }
-//             allocator.free(objects);
-//         }
+            if (page.len < page_size) break;
+        }
 
-//         try testing.expectEqual(@as(usize, 5), objects.len);
-//         for (objects) |object| {
-//             try testing.expect(std.mem.startsWith(u8, object.key, prefix));
-//         }
-//     }
 
-//     // Clean up test objects
-//     for (prefixes) |prefix| {
-//         var i: usize = 0;
-//         while (i < 5) : (i += 1) {
-//             const key = try std.fmt.allocPrint(
-//                 allocator,
-//                 "{s}file{d}.txt",
-//                 .{ prefix, i },
-//             );
-//             defer allocator.free(key);
-//             try client.deleteObject(bucket_name, key);
-//         }
-//     }
-// }
 
-// test "file upload and download" {
-//     // Initialize client
-//     var client = try s3.S3Client.init(allocator, try loadEnvVars());
-//     defer client.deinit();
+        std.debug.print("Object appended, total objects: {d}, all objects: {d}...\n", .{ total_objects, all_objects.items.len });
+        try testing.expectEqual(total_objects, all_objects.items.len);
+    }
 
-//     // Setup test bucket
-//     const bucket_name = "file-upload-test-bucket";
-//     try client.createBucket(bucket_name);
-//     defer _ = client.deleteBucket(bucket_name) catch {};
+    std.debug.print("Object appended ...\n", .{});
+    // Test listing with prefix
+    for (prefixes) |prefix| {
+        const objects = try client.listObjects(bucket_name, .{
+            .prefix = prefix,
+        });
+        defer {
+            for (objects) |object| {
+                _ = client.deleteObject(bucket_name, object.key) catch {};
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(objects);
+        }
 
-//     var uploader = client.uploader();
+        try testing.expectEqual(@as(usize, 5), objects.len);
+        for (objects) |object| {
+            try testing.expect(std.mem.startsWith(u8, object.key, prefix));
+        }
+    }
 
-//     // Test text file upload
-//     {
-//         const s3_key = "text/sample.txt";
-//         try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/sample.txt");
+    std.debug.print("Prefixes listed ...\n", .{});
+}
 
-//         // Verify uploaded content
-//         const downloaded = try client.getObject(bucket_name, s3_key);
-//         defer allocator.free(downloaded);
+test "file upload and download" {
+    std.debug.print("\n=== Starting file upload and download test ===\n", .{});
+    // Initialize client
+    var env_map = try loadEnvVars();
+    defer env_map.deinit();
 
-//         // Read original file for comparison
-//         const original_file = try std.fs.cwd().openFile("tests/integration/assets/sample.txt", .{});
-//         defer original_file.close();
+    const config = try createS3ClientConfig(env_map);
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
-//         const original_content = try original_file.readToEndAlloc(allocator, 1024 * 1024);
-//         defer allocator.free(original_content);
+    // Setup test bucket
+    const bucket_name = "file-upload-test-bucket";
+    try client.createBucket(bucket_name);
+    defer _ = client.deleteBucket(bucket_name) catch {};
 
-//         try testing.expectEqualStrings(original_content, downloaded);
-//     }
+    var uploader = client.uploader();
 
-//     // Test JSON file upload
-//     {
-//         const s3_key = "json/config.json";
-//         try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/config.json");
+    // Test text file upload
+    {
+        const s3_key = "text/sample.txt";
+        try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/sample.txt");
 
-//         // Verify uploaded content
-//         const downloaded = try client.getObject(bucket_name, s3_key);
-//         defer allocator.free(downloaded);
+        // Verify uploaded content
+        const downloaded = try client.getObject(bucket_name, s3_key);
+        defer allocator.free(downloaded);
+        std.debug.print("\nDownloaded: {s} ...\n", .{downloaded});
 
-//         // Read original file for comparison
-//         const original_file = try std.fs.cwd().openFile("tests/integration/assets/config.json", .{});
-//         defer original_file.close();
+        // Read original file for comparison
+        const dir = std.Io.Dir.cwd();
+        const original_file = try dir.openFile(io, "tests/integration/assets/sample.txt", .{});
+        defer original_file.close(io);
 
-//         const original_content = try original_file.readToEndAlloc(allocator, 1024 * 1024);
-//         defer allocator.free(original_content);
+        std.debug.print("\nFile Size: {d} ...\n", .{try original_file.length(io)});
+        var content_buffer: [124]u8 = undefined;
+        _ = try original_file.readPositionalAll(io, &content_buffer, 0);
 
-//         try testing.expectEqualStrings(original_content, downloaded);
+        std.debug.print("\nOriginal file: {s} ...\n", .{content_buffer});
+        try testing.expectEqualStrings(&content_buffer, downloaded);
+    }
 
-//         // Verify JSON parsing still works
-//         const parsed = try std.json.parseFromSlice(
-//             std.json.Value,
-//             allocator,
-//             downloaded,
-//             .{},
-//         );
-//         defer parsed.deinit();
+    // Test JSON file upload
+    {
+        const s3_key = "json/config.json";
+        try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/config.json");
 
-//         try testing.expect(parsed.value.object.get("name").?.string.len > 0);
-//         try testing.expect(parsed.value.object.get("version").?.string.len > 0);
-//     }
+        // Verify uploaded content
+        const downloaded = try client.getObject(bucket_name, s3_key);
+        defer allocator.free(downloaded);
 
-//     // Test file metadata and listing
-//     {
-//         const objects = try client.listObjects(bucket_name, .{});
-//         defer {
-//             for (objects) |object| {
-//                 allocator.free(object.key);
-//                 allocator.free(object.last_modified);
-//                 allocator.free(object.etag);
-//             }
-//             allocator.free(objects);
-//         }
+        // Read original file for comparison
+        const dir = std.Io.Dir.cwd();
+        const original_file = try dir.openFile(io, "tests/integration/assets/config.json", .{});
+        defer original_file.close(io);
 
-//         try testing.expectEqual(@as(usize, 2), objects.len);
+        std.debug.print("\nFile Size: {d} ...\n", .{try original_file.length(io)});
+        var content_buffer: [279]u8 = undefined;
+        _ = try original_file.readPositionalAll(io, &content_buffer, @as(usize, 0));
 
-//         // Verify objects are listed with correct prefixes
-//         var found_text = false;
-//         var found_json = false;
-//         for (objects) |object| {
-//             if (std.mem.startsWith(u8, object.key, "text/")) found_text = true;
-//             if (std.mem.startsWith(u8, object.key, "json/")) found_json = true;
-//         }
-//         try testing.expect(found_text);
-//         try testing.expect(found_json);
-//     }
+        try testing.expectEqualStrings(&content_buffer, downloaded);
 
-//     // Cleanup: Delete the uploaded files
-//     try client.deleteObject(bucket_name, "text/sample.txt");
-//     try client.deleteObject(bucket_name, "json/config.json");
+        // Verify JSON parsing still works
+        const parsed = try std.json.parseFromSlice(
+            std.json.Value,
+            allocator,
+            downloaded,
+            .{},
+        );
+        defer parsed.deinit();
 
-//     // Verify deletion
-//     const remaining = try client.listObjects(bucket_name, .{});
-//     defer {
-//         for (remaining) |object| {
-//             allocator.free(object.key);
-//             allocator.free(object.last_modified);
-//             allocator.free(object.etag);
-//         }
-//         allocator.free(remaining);
-//     }
-//     try testing.expectEqual(@as(usize, 0), remaining.len);
-// }
+        try testing.expect(parsed.value.object.get("name").?.string.len > 0);
+        try testing.expect(parsed.value.object.get("version").?.string.len > 0);
+    }
+
+    // Test file metadata and listing
+    {
+        const objects = try client.listObjects(bucket_name, .{});
+        defer {
+            for (objects) |object| {
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(objects);
+        }
+
+        try testing.expectEqual(@as(usize, 2), objects.len);
+
+        // Verify objects are listed with correct prefixes
+        var found_text = false;
+        var found_json = false;
+        for (objects) |object| {
+            if (std.mem.startsWith(u8, object.key, "text/")) found_text = true;
+            if (std.mem.startsWith(u8, object.key, "json/")) found_json = true;
+        }
+        try testing.expect(found_text);
+        try testing.expect(found_json);
+    }
+
+    // Cleanup: Delete the uploaded files
+    try client.deleteObject(bucket_name, "text/sample.txt");
+    try client.deleteObject(bucket_name, "json/config.json");
+
+    // Verify deletion
+    const remaining = try client.listObjects(bucket_name, .{});
+    defer {
+        for (remaining) |object| {
+            allocator.free(object.key);
+            allocator.free(object.last_modified);
+            allocator.free(object.etag);
+        }
+        allocator.free(remaining);
+    }
+    try testing.expectEqual(@as(usize, 0), remaining.len);
+}

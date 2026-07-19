@@ -1,28 +1,34 @@
 # Integration Tests for S3 Client
 
 These tests verify the functionality of the S3 client against a real
-S3-compatible server (like MinIO). The tests require a running MinIO instance
-with default credentials.
+S3-compatible server (like MinIO, RustFS, Seaweed). The tests require a running S3 
+server instance with credentials.
 
 ## Prerequisites
 
-1. Running MinIO server:
+1. Running S3 server, i'm running RustFS but can be any other:
 
 ```bash
-docker run -p 9000:9000 minio/minio server /data
+docker run -d \
+  --name rustfs-server \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e RUSTFS_ACCESS_KEY=admin \
+  -e RUSTFS_SECRET_KEY=admin \
+  rustfs/rustfs:latest
 ```
 
-2. Default MinIO credentials:
+2. Test credentials:
 
-- Access Key: minioadmin
-- Secret Key: minioadmin
+- Access Key: admin 
+- Secret Key: admin
 - Endpoint: http://localhost:9000
 
 3. System requirements:
 
 - Network access to localhost:9000
 - Sufficient disk space for temporary files
-- Docker (for running MinIO)
+- Docker
 
 ## Test Coverage
 
@@ -82,10 +88,16 @@ docker run -p 9000:9000 minio/minio server /data
 
 ## Running the Tests
 
-1. Start MinIO:
+1. Start S3 Server:
 
 ```bash
-docker run -p 9000:9000 minio/minio server /data
+docker run -d \
+  --name rustfs-server \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e RUSTFS_ACCESS_KEY=admin \
+  -e RUSTFS_SECRET_KEY=admin \
+  rustfs/rustfs:latest
 ```
 
 2. Run integration tests:
@@ -105,7 +117,7 @@ zig build test
 1. **Resource Cleanup**:
    - All tests use `defer` statements to ensure cleanup
    - Temporary files, buckets, and objects are removed after tests
-   - Failed tests should not leave artifacts
+   - failed tests should not leave artifacts
 
 2. **Test Independence**:
    - Each test creates its own bucket with a unique name
@@ -125,18 +137,18 @@ zig build test
 ## Troubleshooting
 
 1. **Connection Refused**:
-   - Ensure MinIO is running
+   - Ensure S3 server is running
    - Check if port 9000 is accessible
    - Verify no firewall blocking access
 
 2. **Authentication Failures**:
-   - Verify MinIO credentials match test configuration
-   - Check MinIO logs for auth errors
+   - Verify S3 credentials match test configuration
+   - Check S3 logs for auth errors
 
 3. **Resource Cleanup Issues**:
    - Manually verify no leftover test buckets
    - Check temporary directory for leftover files
-   - Use MinIO console to inspect state
+   - Use S3 console to inspect state
 
 ## Contributing New Tests
 
@@ -145,5 +157,5 @@ When adding new integration tests:
 1. Follow the existing pattern of test organization
 2. Ensure proper resource cleanup
 3. Add test documentation to this README
-4. Verify tests work with clean MinIO instance
+4. Verify tests work with clean S3 instance
 5. Include both success and error cases

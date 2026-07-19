@@ -7,6 +7,8 @@ pub fn build(b: *std.Build) void {
     // Create the s3 library module
     const s3_module = b.addModule("s3", .{
         .root_source_file = b.path("src/s3/lib.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     // dotenv library
@@ -55,20 +57,27 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the example application");
     run_step.dependOn(&run_cmd.step);
 
+    // Test flags
+    const test_filters = b.option(
+        []const []const u8,
+        "test-filter",
+        "Skip tests that do not match filters",
+    ) orelse &.{};
+
     // Unit tests
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/s3/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const unit_tests = b.addTest(.{ .root_module = test_module });
+    const unit_tests = b.addTest(.{ .root_module = test_module, .filters = test_filters });
     unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
     const run_unit_tests = b.addRunArtifact(unit_tests);
+
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_unit_tests.step);
 
     // Integration tests
-    const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filters") orelse &.{};
     const integration_test_module = b.createModule(.{
         .root_source_file = b.path("tests/integration/s3_client_test.zig"),
         .target = target,

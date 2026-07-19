@@ -85,13 +85,6 @@ pub const SigningParams = struct {
 
 /// Sign an S3 request using AWS Signature Version 4
 pub fn signRequest(allocator: Allocator, credentials: Credentials, params: SigningParams) ![]const u8 {
-    // Use current time if no timestamp provided
-    // TODO: IT'S NECESSARY?
-    //const timestamp = params.timestamp orelse blk: {
-    //    const now = std.Io.Timestamp.now(params.;
-    //    break :blk @as(i64, @intCast(now));
-    //};
-
     // Get the date string in the correct format (YYYYMMDD)
     const date_str = try time_utils.formatAmzDate(allocator, params.timestamp);
     defer allocator.free(date_str);
@@ -157,7 +150,6 @@ pub fn signRequest(allocator: Allocator, credentials: Credentials, params: Signi
     // Get signed headers string
     var header_names = std.ArrayList([]const u8).empty;
     defer header_names.deinit(allocator);
-    // TODO: can be used toOwned probably
     defer {
         for (header_names.items) |name| {
             allocator.free(name);
@@ -372,19 +364,6 @@ fn createAuthorizationHeader(
             signature,
         },
     );
-}
-
-// Helper functions
-
-fn normalizePath(allocator: Allocator, path: []const u8) ![]const u8 {
-    // TODO: Implement proper URI normalization
-    return allocator.dupe(u8, path);
-}
-
-fn createCanonicalQueryString(allocator: Allocator, path: []const u8) ![]const u8 {
-    // TODO: Implement query string sorting and encoding
-    _ = path;
-    return allocator.dupe(u8, "");
 }
 
 /// Calculate SHA256 hash of payload

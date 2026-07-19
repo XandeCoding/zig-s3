@@ -64,6 +64,8 @@ pub const S3Error = error{
     AccessDenied,
     /// Service unavailable
     ServiceUnavailable,
+    /// Server not implemented this function
+    ServerNotImplemented,
 };
 
 /// Configuration type for S3 client
@@ -100,7 +102,16 @@ pub const S3Client = struct {
     ///     OutOfMemory: If client allocation fails
     pub fn init(allocator: std.mem.Allocator, io: std.Io, config: S3ClientConfig) !S3Client {
         const region = config.region orelse "us-east-1";
-        const endpoint = config.endpoint orelse try std.fmt.allocPrint(allocator, "https://s3.{s}.amazonaws.com", .{region});
+        const endpoint_blk = blk: {
+            var buffer: [128]u8 = undefined;
+            const endpoint = try std.fmt.bufPrint(
+                &buffer,
+                "https://s3.{s}.amazonaws.com",
+                .{region},
+            );
+            break :blk endpoint;
+        };
+        const endpoint = config.endpoint orelse endpoint_blk;
 
         return S3Client{
             .inner = try client.S3Client.init(allocator, io, .{
@@ -187,7 +198,9 @@ pub const S3Client = struct {
 };
 
 test "run all unit test" {
-    //_ = @import("client/implementation.zig");
-    //_ = @import("object/operations.zig");
-    _ = @import("bucket/operations.zig");
+    _ = .{
+        @import("client/implementation.zig"),
+        @import("bucket/operations.zig"),
+        @import("object/operations.zig"),
+    };
 }

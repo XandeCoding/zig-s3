@@ -9,12 +9,11 @@ const time = std.time;
 const log = std.log;
 const tls = std.crypto.tls;
 const HttpClient = http.Client;
+const Writer = std.Io.Writer;
 
 const lib = @import("../lib.zig");
 const signer = @import("auth/signer.zig");
 const time_utils = @import("auth/time.zig");
-const writers = @import("../common/writers.zig");
-const parsing = @import("../common/parsing.zig");
 const S3Error = lib.S3Error;
 
 /// Configuration for the S3 client.
@@ -76,8 +75,6 @@ pub const S3Client = struct {
     pub fn deinit(self: *S3Client) void {
         log.debug("Deinitializing S3Client", .{});
         self.http_client.deinit();
-        // TODO:  check if endpoint it's necessary to be freed
-        //self.allocator.free(&self.config.endpoint);
         self.allocator.destroy(self);
     }
 
@@ -115,16 +112,10 @@ pub const S3Client = struct {
             .percent_encoded => |p| if (p.len == 0) "/" else p,
         };
 
-        const uri_query_raw = switch (uri.query orelse Uri.Component.empty) {
+        const uri_query = switch (uri.query orelse Uri.Component.empty) {
             .raw => |p| if (p.len == 0) "" else p,
             .percent_encoded => |p| if (p.len == 0) "" else p,
         };
-        
-        var query_out = try writers.createMemoryWriter(self.allocator);
-        defer query_out.deinit();
-
-        try Uri.Component.percentEncode(&query_out.writer, uri_query_raw, parsing.mustEncodeQuerySymbol);
-        const uri_query = query_out.written();
 
         log.debug("Request URI host: {s}, path: {s}, query: {s}", .{ uri_host, uri_path, uri_query });
 
@@ -155,7 +146,6 @@ pub const S3Client = struct {
             .service = "s3",
         };
 
-        // TODO: CHANGE BODY TO PAYLOAD
         const params = signer.SigningParams{
             .method = @tagName(method),
             .path = uri_path,
@@ -197,34 +187,31 @@ pub const S3Client = struct {
     }
 };
 
-// TODO: CHANGE TO VALIDATE JUST THE HEADER
-// test "S3Client request signing" {
-//     const io = std.testing.io;
-//     const allocator = std.testing.allocator;
-//
-//     const config = S3Config{ .access_key_id = "AKIAIOSFODNN7EXAMPLE", .secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
-//
-//     var client = try S3Client.init(allocator, io, config);
-//     defer client.deinit();
-//
-//     const uri = try Uri.parse("https://examplebucket.s3.amazonaws.com/test.txt");
-//     const req = try client.request(.GET, uri, null, null);
-//
-//     try std.testing.expectEqual(req.status, .ok);
-//     // TODO: VERIFY THE HEADERS SENT IN FETCH OPTION
-//     // Verify authorization header is present
-//     //try std.testing.expect(req.headers.contains("authorization"));
-//
-//     // Verify required AWS headers are present
-//     //try std.testing.expect(req.headers.contains("x-amz-content-sha256"));
-//     //try std.testing.expect(req.headers.contains("x-amz-date"));
-// }
+test "S3Client request signing" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    const config = S3Config{ .access_key_id = "AKIAIOSFODNN7EXAMPLE", .secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+
+    var client = try S3Client.init(allocator, io, config);
+    defer client.deinit();
+
+    const uri = try Uri.parse("https://examplebucket.s3.amazonaws.com/test.txt");
+    const req = try client.request(.GET, uri, null, null);
+
+    try std.testing.expectEqual(req.status, .forbidden);
+}
 
 test "S3Client initialization" {
     const io = std.testing.io;
     const allocator = std.testing.allocator;
 
-    const config = S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = S3Config{
+        .access_key_id = "test-key",
+        .secret_access_key = "test-secret",
+        .region = "us-east-1",
+        .endpoint = "https://s3.us-east-1.amazonaws.com",
+    };
 
     var client = try S3Client.init(allocator, io, config);
     defer client.deinit();
@@ -251,33 +238,37 @@ test "S3Client custom endpoint" {
     try std.testing.expectEqualStrings("http://localhost:9000", client.config.endpoint);
 }
 
-// TODO: CHANGE TO CHECK THE FETCH REQ CONFIG SENT
-// test "S3Client request with body" {
-//     const io = std.testing.io;
-//     const allocator = std.testing.allocator;
-//
-//     const config = S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
-//
-//     var client = try S3Client.init(allocator, io, config);
-//     defer client.deinit();
-//
-//     const uri = try Uri.parse("https://example.s3.amazonaws.com/test.txt");
-//     const body = "Hello, S3!";
-//     const req = try client.request(.PUT, uri, null, body);
-//
-//     try std.testing.expectEqual(req.status, .ok);
-//     // TODO: VERIFY THE HEADERS SENT IN FETCH OPTION
-//     //try std.testing.expect(req.headers.contains("authorization"));
-//     //try std.testing.expect(req.headers.contains("x-amz-content-sha256"));
-//     //try std.testing.expect(req.headers.contains("x-amz-date"));
-//     //try std.testing.expect(req.transfer_encoding.content_length == body.len);
-// }
+test "S3Client request with body" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    const config = S3Config{
+        .access_key_id = "test-key",
+        .secret_access_key = "test-secret",
+        .region = "us-east-1",
+        .endpoint = "https://s3.us-east-1.amazonaws.com",
+    };
+
+    var client = try S3Client.init(allocator, io, config);
+    defer client.deinit();
+
+    const uri = try Uri.parse("https://example.s3.amazonaws.com/test.txt");
+    const body = "Hello, S3!";
+    const req = try client.request(.PUT, uri, null, body);
+
+    try std.testing.expectEqual(req.status, .forbidden);
+}
 
 test "S3Client error handling" {
     const io = std.testing.io;
     const allocator = std.testing.allocator;
 
-    const config = S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = S3Config{
+        .access_key_id = "test-key",
+        .secret_access_key = "test-secret",
+        .region = "us-east-1",
+        .endpoint = "https://s3.us-east-1.amazonaws.com",
+    };
 
     var client = try S3Client.init(allocator, io, config);
     defer client.deinit();

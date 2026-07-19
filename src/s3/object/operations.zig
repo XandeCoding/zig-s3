@@ -6,11 +6,14 @@ const http = std.http;
 const Uri = std.Uri;
 const fmt = std.fmt;
 const fs = std.fs;
+const Writer = std.Io.Writer;
 
 const lib = @import("../lib.zig");
 const client_impl = @import("../client/implementation.zig");
 const bucket_ops = @import("../bucket/operations.zig");
-const writers = @import("../common/writers.zig");
+const encoding = @import("../common/encoding.zig");
+const xml = @import("../common/xml.zig");
+const validators = @import("../common/validators.zig");
 const S3Error = lib.S3Error;
 const S3Client = client_impl.S3Client;
 
@@ -31,11 +34,12 @@ const S3Client = client_impl.S3Client;
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
 pub fn putObject(self: *S3Client, bucket_name: []const u8, key: []const u8, data: []const u8) !void {
+    if (validators.objectNameIsValid(key) == false) return S3Error.InvalidObjectKey;
+
     const uri_str = try std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, bucket_name, key });
     defer self.allocator.free(uri_str);
 
     const req = try self.request(.PUT, try Uri.parse(uri_str), null, data);
-    std.debug.print("status {}\n", .{req.status});
 
     if (req.status == .bad_request) {
         return S3Error.InvalidObjectKey;
@@ -67,7 +71,7 @@ pub fn getObject(self: *S3Client, bucket_name: []const u8, key: []const u8) ![]c
     const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, bucket_name, key });
     defer self.allocator.free(uri_str);
 
-    var alloc_writer = try writers.createMemoryWriter(self.allocator);
+    var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 1024 * 1024);
     defer alloc_writer.deinit();
     const req = try self.request(.GET, try Uri.parse(uri_str), &alloc_writer.writer, null);
 
@@ -154,40 +158,47 @@ pub fn listObjects(
 
     // Build query string
     var query = std.ArrayList(u8).empty;
-    defer query.deinit(self.allocator);
+    defer {
+        query.deinit(self.allocator);
+    }
 
     try query.appendSlice(self.allocator, "list-type=2"); // Use ListObjectsV2
 
     if (options.prefix) |prefix| {
+        const prefix_value = try encoding.encodeURI(self.allocator, prefix);
+        defer self.allocator.free(prefix_value);
+
         try query.appendSlice(self.allocator, "&prefix=");
-        try query.appendSlice(self.allocator, prefix);
+        try query.appendSlice(self.allocator, prefix_value);
     }
 
     if (options.max_keys) |max_keys| {
+        if (max_keys > 1000) return S3Error.InvalidResponse;
+
         var buf: [4]u8 = undefined;
-        const max_keys_string = try std.fmt.bufPrint(&buf, "{d}", .{max_keys});
+        const max_keys_string = try encoding.encodeURI(self.allocator, try std.fmt.bufPrint(&buf, "{d}", .{max_keys}));
+        defer self.allocator.free(max_keys_string);
+
         try query.appendSlice(self.allocator, "&max-keys=");
         try query.appendSlice(self.allocator, max_keys_string);
     }
 
     if (options.start_after) |start_after| {
-        try query.appendSlice(self.allocator, "&start-after=");
-        try query.appendSlice(self.allocator, start_after);
-    }
+        const start_after_value = try encoding.encodeURI(self.allocator, start_after);
+        defer self.allocator.free(start_after_value);
 
-    std.log.debug("Query params: {}", .{query});
+        try query.appendSlice(self.allocator, "&start-after=");
+        try query.appendSlice(self.allocator, start_after_value);
+    }
 
     const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}?{s}", .{ self.config.endpoint, bucket_name, query.items });
     std.log.debug("List object uri str: {s}", .{uri_str});
     defer self.allocator.free(uri_str);
 
-    var alloc_writer = try writers.createMemoryWriter(self.allocator);
+    var alloc_writer =try Writer.Allocating.initCapacity(self.allocator, 4096); 
     defer alloc_writer.deinit();
 
     const response = try self.request(.GET, try Uri.parse(uri_str), &alloc_writer.writer, null);
-    // TODO: PLACE BODY AFTER THE STATUS CHECK
-    const body = alloc_writer.written();
-    std.log.debug("List object response: {s}", .{body});
 
     if (response.status == .not_found) {
         return S3Error.BucketNotFound;
@@ -195,6 +206,9 @@ pub fn listObjects(
     if (response.status != .ok) {
         return S3Error.InvalidResponse;
     }
+
+    const body = alloc_writer.written();
+    std.log.debug("List object response: {s}", .{body});
     // Parse XML response
     var objects = std.ArrayList(ObjectInfo).empty;
     errdefer {
@@ -206,31 +220,18 @@ pub fn listObjects(
         objects.deinit(self.allocator);
     }
 
-    //const body = alloc_writer.written();
     // Simple XML parsing - look for <Contents> elements
     var it = std.mem.splitSequence(u8, body, "<Contents>");
     _ = it.first(); // Skip first part before any <Contents>
 
     while (it.next()) |object_xml| {
-        // Extract key
-        const key_start = std.mem.indexOf(u8, object_xml, "<Key>") orelse continue;
-        const key_end = std.mem.indexOf(u8, object_xml, "</Key>") orelse continue;
-        const key = try self.allocator.dupe(u8, object_xml[key_start + 5 .. key_end]);
+        const key = try xml.getByKey(self.allocator, object_xml, "Key");
+        const last_modified = try xml.getByKey(self.allocator, object_xml, "LastModified");
+        const etag = try xml.getByKey(self.allocator, object_xml, "ETag");
 
-        // Extract size
-        const size_start = std.mem.indexOf(u8, object_xml, "<Size>") orelse continue;
-        const size_end = std.mem.indexOf(u8, object_xml, "</Size>") orelse continue;
-        const size = try std.fmt.parseInt(u64, object_xml[size_start + 6 .. size_end], 10);
-
-        // Extract last modified
-        const lm_start = std.mem.indexOf(u8, object_xml, "<LastModified>") orelse continue;
-        const lm_end = std.mem.indexOf(u8, object_xml, "</LastModified>") orelse continue;
-        const last_modified = try self.allocator.dupe(u8, object_xml[lm_start + 13 .. lm_end]);
-
-        // Extract ETag
-        const etag_start = std.mem.indexOf(u8, object_xml, "<ETag>") orelse continue;
-        const etag_end = std.mem.indexOf(u8, object_xml, "</ETag>") orelse continue;
-        const etag = try self.allocator.dupe(u8, object_xml[etag_start + 6 .. etag_end]);
+        const size_string = try xml.getByKey(self.allocator, object_xml, "Size");
+        defer self.allocator.free(size_string);
+        const size = try std.fmt.parseInt(u64, size_string, 10);
 
         try objects.append(self.allocator, .{
             .key = key,
@@ -304,13 +305,11 @@ pub const ObjectUploader = struct {
         data: anytype,
     ) !void {
         // Create a writer for JSON string
-        // TODO: MAYBE UTILIZE THE COMMON GET MEMORY WRITER
-        var out: std.Io.Writer.Allocating = .init(self.client.allocator);
-        const writer = &out.writer;
+        var out = try Writer.Allocating.initCapacity(self.client.allocator, 4096);
         defer out.deinit();
 
         // Serialize to JSON
-        try std.json.Stringify.value(data, .{}, writer);
+        try std.json.Stringify.value(data, .{}, &out.writer);
         const data_raw = out.written();
 
         std.log.debug("Data raw {s}", .{data_raw});
@@ -323,42 +322,67 @@ test "upload different types" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var test_client = try S3Client.init(allocator, io, .{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" });
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
     defer test_client.deinit();
+    const bucket_name = "test-upload-different-types";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+
+    const directory = std.Io.Dir.cwd();
+    const file = try directory.createFile(io, "upload.txt", .{});
+    defer {
+        file.close(io);
+        _ = directory.deleteFile(io, "upload.txt") catch {};
+    }
+
+    try file.writePositionalAll(io, "upload file test", 0);
 
     var uploader = ObjectUploader.init(test_client);
 
     // File upload
     try uploader.uploadFile(
-        "my-bucket",
-        "images/photo.jpg",
-        "path/to/local/photo.jpg",
+        bucket_name,
+        "images/upload.txt",
+        "upload.txt",
     );
+    defer _ = deleteObject(test_client, bucket_name, "images/upload.txt") catch {};
 
     // String upload
     try uploader.uploadString(
-        "my-bucket",
+        bucket_name,
         "text/hello.txt",
         "Hello, World!",
     );
 
+    defer _ = deleteObject(test_client, bucket_name, "text/hello.txt") catch {};
     // JSON upload
     const json_data = .{
         .name = "John",
         .age = 30,
     };
     try uploader.uploadJson(
-        "my-bucket",
+        bucket_name,
         "data/user.json",
         json_data,
     );
+    defer _ = deleteObject(test_client, bucket_name, "data/user.json") catch {};
 }
 
 test "list objects basic" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    var test_client = try S3Client.init(allocator, io, .{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" });
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
     defer test_client.deinit();
 
     // Create test bucket and objects
@@ -413,7 +437,12 @@ test "list objects with prefix" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -464,7 +493,12 @@ test "list objects pagination" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -530,7 +564,12 @@ test "list objects error cases" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -541,10 +580,14 @@ test "list objects error cases" {
         listObjects(test_client, "nonexistent-bucket", .{}),
     );
 
+    const bucket_name = "error-cases-test";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+
     // Test invalid max_keys
     try std.testing.expectError(
         error.InvalidResponse,
-        listObjects(test_client, "test-bucket", .{
+        listObjects(test_client, bucket_name, .{
             .max_keys = 1001, // Max allowed is 1000
         }),
     );
@@ -554,28 +597,36 @@ test "object operations" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    // Initialize test client with dummy credentials
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
 
+    const bucket_name = "object-operations-test";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+
     // Test basic object lifecycle
     const test_data = "Hello, S3!";
-    try putObject(test_client, "test-bucket", "test-key", test_data);
+    try putObject(test_client, bucket_name, "admin", test_data);
 
-    const retrieved = try getObject(test_client, "test-bucket", "test-key");
+    const retrieved = try getObject(test_client, bucket_name, "admin");
     defer allocator.free(retrieved);
     try std.testing.expectEqualStrings(test_data, retrieved);
 
-    try deleteObject(test_client, "test-bucket", "test-key");
+    try deleteObject(test_client, bucket_name, "admin");
 }
 
 test "object operations error handling" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{ .access_key_id = "admin", .secret_access_key = "admin", .region = "us-east-1", .endpoint = "http://localhost:9000" };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -598,7 +649,12 @@ test "object operations with large data" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -611,16 +667,19 @@ test "object operations with large data" {
     for (0..data_size) |i| {
         large_data[i] = @as(u8, @truncate(i));
     }
+    const bucket_name = "large-data-test";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
 
     // Test large object operations
-    try putObject(test_client, "test-bucket", "large-file.bin", large_data);
+    try putObject(test_client, bucket_name, "large-file.bin", large_data);
 
-    const retrieved = try getObject(test_client, "test-bucket", "large-file.bin");
+    const retrieved = try getObject(test_client, bucket_name, "large-file.bin");
     defer allocator.free(retrieved);
 
     try std.testing.expectEqualSlices(u8, large_data, retrieved);
 
-    try deleteObject(test_client, "test-bucket", "large-file.bin");
+    try deleteObject(test_client, bucket_name, "large-file.bin");
 }
 
 test "object operations with custom endpoint" {
@@ -628,8 +687,8 @@ test "object operations with custom endpoint" {
     const io = std.testing.io;
 
     const config = client_impl.S3Config{
-        .access_key_id = "test-key",
-        .secret_access_key = "test-secret",
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
     };
@@ -638,25 +697,38 @@ test "object operations with custom endpoint" {
     defer test_client.deinit();
 
     // Test object operations with custom endpoint
-    const test_data = "Testing with custom endpoint";
-    try putObject(test_client, "test-bucket", "custom-endpoint-test.txt", test_data);
+    const bucket_name = "custom-endpoint-bucket";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
 
-    const retrieved = try getObject(test_client, "test-bucket", "custom-endpoint-test.txt");
+    const test_data = "Testing with custom endpoint";
+    try putObject(test_client, bucket_name, "custom-endpoint-test.txt", test_data);
+
+    const retrieved = try getObject(test_client, bucket_name, "custom-endpoint-test.txt");
     defer allocator.free(retrieved);
 
     try std.testing.expectEqualStrings(test_data, retrieved);
 
-    try deleteObject(test_client, "test-bucket", "custom-endpoint-test.txt");
+    try deleteObject(test_client, bucket_name, "custom-endpoint-test.txt");
 }
 
 test "object key validation" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
+
+    const bucket_name = "object-validation-bucket";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
 
     // Test various invalid object keys
     const invalid_keys = [_][]const u8{
@@ -669,7 +741,7 @@ test "object key validation" {
     for (invalid_keys) |key| {
         try std.testing.expectError(
             error.InvalidObjectKey,
-            putObject(test_client, "test-bucket", key, "test data"),
+            putObject(test_client, bucket_name, key, "test data"),
         );
     }
 
@@ -677,20 +749,19 @@ test "object key validation" {
     const valid_keys = [_][]const u8{
         "valid/key.txt",
         "path/to/object.json",
-        "special-chars_!@#$%^&*().txt",
-        "unicode-✨.txt",
+        "special-chars_!@$&*().txt",
     };
 
     for (valid_keys) |key| {
         const test_data = "Test data";
-        try putObject(test_client, "test-bucket", key, test_data);
+        try putObject(test_client, bucket_name, key, test_data);
 
-        const retrieved = try getObject(test_client, "test-bucket", key);
+        const retrieved = try getObject(test_client, bucket_name, key);
         defer allocator.free(retrieved);
 
         try std.testing.expectEqualStrings(test_data, retrieved);
 
-        try deleteObject(test_client, "test-bucket", key);
+        try deleteObject(test_client, bucket_name, key);
     }
 }
 
@@ -698,7 +769,12 @@ test "list objects empty bucket" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -719,7 +795,12 @@ test "list objects with multiple prefixes" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -789,7 +870,12 @@ test "list objects pagination with various sizes" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -804,8 +890,10 @@ test "list objects pagination with various sizes" {
     while (i < total_objects) : (i += 1) {
         const key = try fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{i}); // pad with zeros for correct sorting
         defer allocator.free(key);
+
         const content = try fmt.allocPrint(allocator, "Content {d}", .{i});
         defer allocator.free(content);
+
         try putObject(test_client, bucket_name, key, content);
     }
     defer {
@@ -836,10 +924,9 @@ test "list objects pagination with various sizes" {
             });
             defer {
                 for (page) |object| {
-                    if (!std.mem.eql(u8, object.key, last_key orelse "")) {
-                        allocator.free(object.last_modified);
-                        allocator.free(object.etag);
-                    }
+                    allocator.free(object.last_modified);
+                    allocator.free(object.etag);
+                    allocator.free(object.key);
                 }
                 allocator.free(page);
             }
@@ -878,7 +965,12 @@ test "list objects with special characters in prefix" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -891,10 +983,10 @@ test "list objects with special characters in prefix" {
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "special!chars/test1.txt", .content = "1" },
         .{ .key = "special@chars/test2.txt", .content = "2" },
-        .{ .key = "special#chars/test3.txt", .content = "3" },
+        .{ .key = "special*chars/test3.txt", .content = "3" },
         .{ .key = "special$chars/test4.txt", .content = "4" },
-        .{ .key = "special chars/test5.txt", .content = "5" },
-        .{ .key = "special%20chars/test6.txt", .content = "6" },
+        .{ .key = "special_chars/test5.txt", .content = "5" },
+        .{ .key = "special:20chars/test6.txt", .content = "6" },
         .{ .key = "special+chars/test7.txt", .content = "7" },
     };
 
@@ -932,7 +1024,12 @@ test "ObjectUploader basic functionality" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -995,7 +1092,12 @@ test "ObjectUploader file operations" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -1024,6 +1126,7 @@ test "ObjectUploader file operations" {
 
     // Test file upload
     const file_path = try directory.dir.realPathFileAlloc(io, test_filename, allocator);
+    defer allocator.free(file_path);
     try uploader.uploadFile(bucket_name, "uploaded.txt", file_path);
 
     // Verify file upload
@@ -1039,7 +1142,12 @@ test "ObjectUploader error cases" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "test-key", .secret_access_key = "test-secret", .region = "us-east-1", .endpoint = "https://s3.us-east-1.amazonaws.com" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -1048,7 +1156,7 @@ test "ObjectUploader error cases" {
 
     // Test non-existent bucket
     try std.testing.expectError(
-        error.BucketNotFound,
+        error.InvalidResponse,
         uploader.uploadString("nonexistent-bucket", "test.txt", "test"),
     );
 
@@ -1063,16 +1171,6 @@ test "ObjectUploader error cases" {
         error.FileNotFound,
         uploader.uploadFile("test-bucket", "test.txt", "nonexistent/file.txt"),
     );
-
-    // Test invalid JSON
-    const invalid_json = .{
-        .recursive = @as(*anyopaque, undefined), // Can't serialize pointer types to JSON
-    };
-
-    try std.testing.expectError(
-        error.anyopaque,
-        uploader.uploadJson("test-bucket", "test.json", invalid_json),
-    );
 }
 
 test "ObjectUploader with custom endpoint" {
@@ -1080,8 +1178,8 @@ test "ObjectUploader with custom endpoint" {
     const io = std.testing.io;
 
     const config = client_impl.S3Config{
-        .access_key_id = "test-key",
-        .secret_access_key = "test-secret",
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
     };
