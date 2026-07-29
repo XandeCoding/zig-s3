@@ -25,6 +25,18 @@ const client = @import("client/implementation.zig");
 const bucket_ops = @import("bucket/operations.zig");
 const object_ops = @import("object/operations.zig");
 
+/// Configuration for the S3 client handler.
+/// This includes AWS credentials and regional settings.
+pub const S3ClientConfig = struct {
+    /// AWS access key ID or compatible credential
+    access_key_id: []const u8,
+    /// AWS secret access key or compatible credential
+    secret_access_key: []const u8,
+    /// AWS region (e.g., "us-east-1") - default is "us-east-1"
+    region: ?[]const u8 = null,
+    /// custom endpoint for S3-compatible services (e.g., MinIO, LocalStack) when not passed points to AWS S3 solution
+    endpoint: ?[]const u8 = null,
+};
 /// Possible errors that can occur during S3 operations.
 /// These errors cover both AWS-specific issues and general HTTP/network problems.
 pub const S3Error = error{
@@ -52,6 +64,8 @@ pub const S3Error = error{
     AccessDenied,
     /// Service unavailable
     ServiceUnavailable,
+    /// Server not implemented this function
+    ServerNotImplemented,
 };
 
 /// Configuration type for S3 client
@@ -86,9 +100,26 @@ pub const S3Client = struct {
     ///
     /// Errors:
     ///     OutOfMemory: If client allocation fails
-    pub fn init(allocator: std.mem.Allocator, config: S3Config) !S3Client {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, config: S3ClientConfig) !S3Client {
+        const region = config.region orelse "us-east-1";
+        const endpoint_blk = blk: {
+            var buffer: [128]u8 = undefined;
+            const endpoint = try std.fmt.bufPrint(
+                &buffer,
+                "https://s3.{s}.amazonaws.com",
+                .{region},
+            );
+            break :blk endpoint;
+        };
+        const endpoint = config.endpoint orelse endpoint_blk;
+
         return S3Client{
-            .inner = try client.S3Client.init(allocator, config),
+            .inner = try client.S3Client.init(allocator, io, .{
+                .access_key_id = config.access_key_id,
+                .secret_access_key = config.secret_access_key,
+                .region = region,
+                .endpoint = endpoint,
+            }),
         };
     }
 
@@ -165,3 +196,11 @@ pub const S3Client = struct {
         return ObjectUploader.init(self.inner);
     }
 };
+
+test "run all unit test" {
+    _ = .{
+        @import("client/implementation.zig"),
+        @import("bucket/operations.zig"),
+        @import("object/operations.zig"),
+    };
+}

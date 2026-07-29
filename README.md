@@ -4,7 +4,7 @@ This project is currently under construction and subject to changes.
 
 # S3 Client for Zig 🚀
 
-[![Zig](https://img.shields.io/badge/Zig-0.13.0-orange.svg)](https://ziglang.org)
+[![Zig](https://img.shields.io/badge/Zig-0.16.0-orange.svg)](https://ziglang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](https://github.com/algoflows/zig-s3)
 
@@ -43,8 +43,8 @@ S3-compatible services.
 
 ## 🔧 Prerequisites
 
-- Zig 0.13.0 or newer
-- For integration testing: Docker (optional, for running MinIO)
+- Zig 0.16.0 or newer
+- For integration testing: Docker (optional, for running MinIO or RustFS)
 
 ## 📥 Installation
 
@@ -53,10 +53,10 @@ Add the package to your `build.zig.zon`:
 ```zig
 .{
     .name = "your-project",
-    .version = "0.1.0",
+    .version = "0.2.0",
     .dependencies = .{
         .s3 = .{
-            .url = "https://github.com/algoflows/zig-s3/archive/v0.2.0.tar.gz",
+            .url = "https://github.com/algoflows/zig-s3/archive/v0.3.0.tar.gz",
             // Don't forget to update hash after publishing
             .hash = "...",
         },
@@ -80,10 +80,10 @@ exe.addModule("s3", s3_dep.module("s3"));
 const std = @import("std");
 const s3 = @import("s3");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    // Get allocator
+    std.log.info("Initializing GeneralPurposeAllocator", .{});
+    const allocator = init.gpa;
 
     // Initialize client
     var client = try s3.S3Client.init(allocator, .{
@@ -179,7 +179,13 @@ Integration tests require a running MinIO instance:
 1. Start MinIO:
 
 ```bash
-docker run -p 9000:9000 minio/minio server /data
+docker run -d \
+  --name rustfs-server \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e RUSTFS_ACCESS_KEY=admin \
+  -e RUSTFS_SECRET_KEY=admin \
+  rustfs/rustfs:latest
 ```
 
 2. Run integration tests:
@@ -193,7 +199,7 @@ tests.
 
 ## 🛠️ Development
 
-- Written in Zig 0.13.0
+- Written in Zig 0.16.0
 - Uses only standard library (no external dependencies)
 - Memory safe with proper allocation and cleanup
 - Follows Zig style guide and best practices
