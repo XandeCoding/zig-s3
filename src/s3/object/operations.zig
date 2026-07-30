@@ -8,13 +8,12 @@ const fmt = std.fmt;
 const fs = std.fs;
 const Writer = std.Io.Writer;
 
-const lib = @import("../lib.zig");
 const client_impl = @import("../client/implementation.zig");
 const bucket_ops = @import("../bucket/operations.zig");
 const encoding = @import("../common/encoding.zig");
 const xml = @import("../common/xml.zig");
 const validators = @import("../common/validators.zig");
-const S3Error = lib.S3Error;
+const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 
 /// Upload an object to S3.

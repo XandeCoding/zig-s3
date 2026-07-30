@@ -8,11 +8,10 @@ const fmt = std.fmt;
 const log = std.log;
 const Writer = std.Io.Writer;
 
-const lib = @import("../lib.zig");
 const client_impl = @import("../client/implementation.zig");
 const xml = @import("../common/xml.zig");
 const validators = @import("../common/validators.zig");
-const S3Error = lib.S3Error;
+const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 
 /// Create a new bucket in S3.

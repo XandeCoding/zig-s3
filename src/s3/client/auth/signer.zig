@@ -93,7 +93,7 @@ pub fn signRequest(allocator: Allocator, credentials: Credentials, params: Signi
     const datetime_str = try time_utils.formatAmzDateTime(allocator, params.timestamp);
     defer allocator.free(datetime_str);
 
-    log.debug("Signing request with date: {s}, datetime: {s}", .{ date_str, datetime_str });
+    //log.debug("Signing request with date: {s}, datetime: {s}", .{ date_str, datetime_str });
 
     // Create credential scope
     const credential_scope = try std.fmt.allocPrint(
@@ -119,7 +119,7 @@ pub fn signRequest(allocator: Allocator, credentials: Credentials, params: Signi
     });
     defer allocator.free(canonical_request);
 
-    log.debug("Canonical request:\n{s}", .{canonical_request});
+    //log.debug("Canonical request:\n{s}", .{canonical_request});
 
     // Create string to sign
     const string_to_sign = try createStringToSign(
@@ -131,7 +131,7 @@ pub fn signRequest(allocator: Allocator, credentials: Credentials, params: Signi
     );
     defer allocator.free(string_to_sign);
 
-    log.debug("String to sign:\n{s}", .{string_to_sign});
+    //log.debug("String to sign:\n{s}", .{string_to_sign});
 
     // Calculate signing key
     const signing_key = try deriveSigningKey(
