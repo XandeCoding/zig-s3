@@ -5,7 +5,6 @@ const Allocator = std.mem.Allocator;
 const http = std.http;
 const Uri = std.Uri;
 const fmt = std.fmt;
-const log = std.log;
 const Writer = std.Io.Writer;
 
 const client_impl = @import("../client/implementation.zig");
@@ -34,42 +33,32 @@ pub fn createBucket(self: *S3Client, bucket_name: []const u8) !void {
 
     const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.config.endpoint, bucket_name });
     defer self.allocator.free(uri_str);
-    std.log.debug("Constructed URI: {s}\n", .{uri_str});
 
     const req = try self.request(.PUT, try Uri.parse(uri_str), null, null);
-    std.log.debug("Sent PUT request to create bucket, status: {}\n", .{req.status});
 
     if (req.status != .ok and req.status != .created) {
         switch (req.status) {
             .conflict => {
-                std.log.debug("Bucket already exists: {s}\n", .{bucket_name});
                 return S3Error.BucketAlreadyExists;
             },
             .bad_request => {
-                std.log.debug("Invalid bucket name: {s}\n", .{bucket_name});
                 return S3Error.InvalidBucketName;
             },
             .forbidden => {
-                std.log.debug("Access denied: {s}\n", .{bucket_name});
                 return S3Error.AccessDenied;
             },
             .service_unavailable => {
-                std.log.debug("Service unavailable: {s}\n", .{bucket_name});
                 return S3Error.ServiceUnavailable;
             },
             // RustFS yet implemented name validation partially
             .not_implemented => {
-                std.log.debug("Error not totally implemented in the server: {s}\n", .{bucket_name});
                 return S3Error.ServerNotImplemented;
             },
             else => {
-                std.log.debug("Failed to create bucket: {s}, status: {}\n", .{ bucket_name, req.status });
                 return S3Error.InvalidResponse;
             },
         }
     }
-
-    std.log.debug("Bucket created successfully: {s}\n", .{bucket_name});
 }
 
 /// Delete an existing bucket from S3.
@@ -95,18 +84,15 @@ pub fn deleteBucket(self: *S3Client, bucket_name: []const u8) !void {
     switch (response.status) {
         .no_content => {},
         .unauthorized, .forbidden => {
-            log.err("Authentication failed: {}", .{response.status});
             return S3Error.InvalidCredentials;
         },
         .not_found => {
             return S3Error.BucketNotFound;
         },
         .bad_request => {
-            log.err("Bad request: {}", .{response.status});
             return S3Error.InvalidResponse;
         },
         else => {
-            log.err("Unexpected response status: {}", .{response.status});
             return S3Error.InvalidResponse;
         },
     }
@@ -136,8 +122,6 @@ pub const BucketInfo = struct {
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
 pub fn listBuckets(self: *S3Client) ![]BucketInfo {
-    log.debug("Starting listBuckets operation", .{});
-    log.debug("Requesting list of buckets from endpoint: {s}", .{self.config.endpoint});
     var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 4096);
     defer alloc_writer.deinit();
 
@@ -145,15 +129,12 @@ pub fn listBuckets(self: *S3Client) ![]BucketInfo {
     switch (response.status) {
         .ok => {},
         .unauthorized, .forbidden => {
-            log.err("Authentication failed: {}", .{response.status});
             return S3Error.InvalidCredentials;
         },
         .bad_request => {
-            log.err("Bad request: {}", .{response.status});
             return S3Error.InvalidResponse;
         },
         else => {
-            log.err("Unexpected response status: {}", .{response.status});
             return S3Error.InvalidResponse;
         },
     }
@@ -161,8 +142,6 @@ pub fn listBuckets(self: *S3Client) ![]BucketInfo {
     const body = try alloc_writer.toOwnedSlice();
     defer self.allocator.free(body);
 
-    log.debug("list buckets body: {s}", .{body});
-    log.debug("Parsing XML response", .{});
     var buckets = std.ArrayList(BucketInfo).empty;
     errdefer {
         for (buckets.items) |bucket| {
@@ -176,13 +155,8 @@ pub fn listBuckets(self: *S3Client) ![]BucketInfo {
     _ = it.first(); // Skip first part before any <Bucket>
 
     while (it.next()) |bucket_xml| {
-        log.debug("Processing bucket XML: {s}", .{bucket_xml});
-
         const name = try xml.getByKey(self.allocator, bucket_xml, "Name");
-        log.debug("Found bucket: {s}", .{name});
-
         const date = try xml.getByKey(self.allocator, bucket_xml, "CreationDate");
-        log.debug("Bucket creation date: {s}", .{date});
 
         try buckets.append(self.allocator, .{
             .name = name,
@@ -190,7 +164,6 @@ pub fn listBuckets(self: *S3Client) ![]BucketInfo {
         });
     }
 
-    log.info("Found {} buckets total", .{buckets.items.len});
     return buckets.toOwnedSlice(self.allocator);
 }
 
@@ -199,7 +172,12 @@ test "bucket operations" {
     const io = std.testing.io;
 
     // Initialize test client with dummy credentials
-    const config = client_impl.S3Config{ .access_key_id = "admin", .secret_access_key = "admin", .region = "us-east-1", .endpoint = "http://localhost:9000" };
+    const config = client_impl.S3Config{ 
+        .access_key_id = "admin", 
+        .secret_access_key = "admin",
+        .region = "us-east-1", 
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();

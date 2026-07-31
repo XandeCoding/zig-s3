@@ -50,7 +50,6 @@ const crypto = std.crypto;
 const fmt = std.fmt;
 const mem = std.mem;
 const time = std.time;
-const log = std.log;
 const time_utils = @import("time.zig");
 
 /// AWS region for signing

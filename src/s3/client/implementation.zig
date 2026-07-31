@@ -6,7 +6,6 @@ const http = std.http;
 const Uri = std.Uri;
 const fmt = std.fmt;
 const time = std.time;
-const log = std.log;
 const tls = std.crypto.tls;
 const HttpClient = http.Client;
 const Writer = std.Io.Writer;
