@@ -29,24 +29,13 @@
 /// - S3_ENDPOINT: Custom endpoint URL (default: "http://localhost:9000")
 const std = @import("std");
 const s3 = @import("s3/lib.zig");
-const dotenv = @import("dotenv");
 
-fn loadEnvVars(init: std.process.Init) !s3.S3ClientConfig {
-    try dotenv.loadFrom(init.gpa, init.io, init.environ_map, ".env", .{});
-    const env_map = init.environ_map;
-
-    const access_key = env_map.get("S3_ACCESS_KEY") orelse
-        return error.MissingAccessKey;
-    const secret_key = env_map.get("S3_SECRET_KEY") orelse
-        return error.MissingSecretKey;
-    const endpoint = env_map.get("S3_PUBLIC_ENDPOINT") orelse
-        return error.MissingEndpoint;
-
+fn loadEnvVars() !s3.S3ClientConfig {
     return s3.S3ClientConfig{
-        .access_key_id = access_key,
-        .secret_access_key = secret_key,
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
         .region = "us-west-1",
-        .endpoint = endpoint,
+        .endpoint = "http://localhost:9000",
     };
 }
 

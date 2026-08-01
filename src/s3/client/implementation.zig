@@ -6,15 +6,14 @@ const http = std.http;
 const Uri = std.Uri;
 const fmt = std.fmt;
 const time = std.time;
-const log = std.log;
 const tls = std.crypto.tls;
 const HttpClient = http.Client;
 const Writer = std.Io.Writer;
 
-const lib = @import("../lib.zig");
 const signer = @import("auth/signer.zig");
 const time_utils = @import("auth/time.zig");
-const S3Error = lib.S3Error;
+const errors = @import("../common/errors.zig");
+const S3Error = errors.S3Error;
 
 /// Configuration for the S3 client.
 /// This includes AWS credentials and regional settings.
@@ -43,7 +42,6 @@ pub const S3Client = struct {
     /// Caller owns the returned client and must call deinit when done.
     /// Memory is allocated for the client instance.
     pub fn init(allocator: Allocator, io: std.Io, config: S3Config) !*S3Client {
-        log.debug("Initializing S3Client", .{});
         const self = try allocator.create(S3Client);
 
         // Initialize HTTP client
@@ -66,14 +64,12 @@ pub const S3Client = struct {
             .http_client = client,
         };
 
-        log.debug("S3Client initialized with TLS support", .{});
         return self;
     }
 
     /// Clean up resources used by the client.
     /// This includes the HTTP client and the client instance itself.
     pub fn deinit(self: *S3Client) void {
-        log.debug("Deinitializing S3Client", .{});
         self.http_client.deinit();
         self.allocator.destroy(self);
     }
@@ -94,8 +90,6 @@ pub const S3Client = struct {
         writer: ?*std.Io.Writer,
         payload: ?[]const u8,
     ) !HttpClient.FetchResult {
-        log.debug("Starting S3 request: method={s}", .{@tagName(method)});
-
         // Create headers map for signing
         var headers = std.StringHashMap([]const u8).init(self.allocator);
         defer headers.deinit();
@@ -117,8 +111,6 @@ pub const S3Client = struct {
             .percent_encoded => |p| if (p.len == 0) "" else p,
         };
 
-        log.debug("Request URI host: {s}, path: {s}, query: {s}", .{ uri_host, uri_path, uri_query });
-
         // Add required headers in specific order
         try headers.put("content-type", "application/xml");
         try headers.put("host", uri_host);
@@ -136,8 +128,6 @@ pub const S3Client = struct {
         const amz_date = try time_utils.formatAmzDateTime(self.allocator, timestamp);
         defer self.allocator.free(amz_date);
         try headers.put("x-amz-date", amz_date);
-
-        log.debug("Using current timestamp: {d}, formatted as: {s}", .{ timestamp, amz_date });
 
         const credentials = signer.Credentials{
             .access_key = self.config.access_key_id,
@@ -158,8 +148,6 @@ pub const S3Client = struct {
         // Generate authorization header
         const auth_header = try signer.signRequest(self.allocator, credentials, params);
         defer self.allocator.free(auth_header);
-
-        log.debug("Generated auth header: {s}", .{auth_header});
 
         return try self.http_client.fetch(.{
             .location = .{

@@ -24,6 +24,7 @@ const std = @import("std");
 const client = @import("client/implementation.zig");
 const bucket_ops = @import("bucket/operations.zig");
 const object_ops = @import("object/operations.zig");
+const errors = @import("common/errors.zig");
 
 /// Configuration for the S3 client handler.
 /// This includes AWS credentials and regional settings.
@@ -37,36 +38,8 @@ pub const S3ClientConfig = struct {
     /// custom endpoint for S3-compatible services (e.g., MinIO, LocalStack) when not passed points to AWS S3 solution
     endpoint: ?[]const u8 = null,
 };
-/// Possible errors that can occur during S3 operations.
-/// These errors cover both AWS-specific issues and general HTTP/network problems.
-pub const S3Error = error{
-    /// Invalid AWS credentials or signature
-    InvalidCredentials,
-    /// Network or connection failure
-    ConnectionFailed,
-    /// Requested bucket does not exist
-    BucketNotFound,
-    /// Requested object does not exist
-    ObjectNotFound,
-    /// Unexpected response from S3 service
-    InvalidResponse,
-    /// Error during request signing
-    SignatureError,
-    /// Memory allocation failure
-    OutOfMemory,
-    /// Invalid object key
-    InvalidObjectKey,
-    /// Bucket already exists
-    BucketAlreadyExists,
-    /// Invalid bucket name
-    InvalidBucketName,
-    /// Access denied
-    AccessDenied,
-    /// Service unavailable
-    ServiceUnavailable,
-    /// Server not implemented this function
-    ServerNotImplemented,
-};
+
+pub const S3Error = errors.S3Error;
 
 /// Configuration type for S3 client
 pub const S3Config = client.S3Config;
@@ -197,10 +170,3 @@ pub const S3Client = struct {
     }
 };
 
-test "run all unit test" {
-    _ = .{
-        @import("client/implementation.zig"),
-        @import("bucket/operations.zig"),
-        @import("object/operations.zig"),
-    };
-}

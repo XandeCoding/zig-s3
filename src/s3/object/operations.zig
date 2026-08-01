@@ -8,13 +8,12 @@ const fmt = std.fmt;
 const fs = std.fs;
 const Writer = std.Io.Writer;
 
-const lib = @import("../lib.zig");
 const client_impl = @import("../client/implementation.zig");
 const bucket_ops = @import("../bucket/operations.zig");
 const encoding = @import("../common/encoding.zig");
 const xml = @import("../common/xml.zig");
 const validators = @import("../common/validators.zig");
-const S3Error = lib.S3Error;
+const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 
 /// Upload an object to S3.
@@ -153,9 +152,6 @@ pub fn listObjects(
     bucket_name: []const u8,
     options: ListObjectsOptions,
 ) ![]ObjectInfo {
-    std.log.debug("Starting listObjects operation", .{});
-    std.log.debug("Requesting list of list of objects from endpoint: {s}", .{self.config.endpoint});
-
     // Build query string
     var query = std.ArrayList(u8).empty;
     defer {
@@ -192,10 +188,9 @@ pub fn listObjects(
     }
 
     const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}?{s}", .{ self.config.endpoint, bucket_name, query.items });
-    std.log.debug("List object uri str: {s}", .{uri_str});
     defer self.allocator.free(uri_str);
 
-    var alloc_writer =try Writer.Allocating.initCapacity(self.allocator, 4096); 
+    var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 4096);
     defer alloc_writer.deinit();
 
     const response = try self.request(.GET, try Uri.parse(uri_str), &alloc_writer.writer, null);
@@ -208,7 +203,6 @@ pub fn listObjects(
     }
 
     const body = alloc_writer.written();
-    std.log.debug("List object response: {s}", .{body});
     // Parse XML response
     var objects = std.ArrayList(ObjectInfo).empty;
     errdefer {
@@ -312,7 +306,6 @@ pub const ObjectUploader = struct {
         try std.json.Stringify.value(data, .{}, &out.writer);
         const data_raw = out.written();
 
-        std.log.debug("Data raw {s}", .{data_raw});
         // Upload the JSON data
         try putObject(self.client, bucket_name, key, data_raw);
     }

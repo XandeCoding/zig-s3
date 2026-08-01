@@ -38,8 +38,16 @@ S3-compatible services.
 - 🛡️ Memory-safe implementation using Zig's standard library
 - 🧪 Comprehensive test suite:
   - Unit tests for all components
-  - Integration tests with MinIO
+  - Integration tests with MinIO and RustFS
   - Test assets for real-world scenarios
+
+## 🛤️ Roadmap
+
+[x] Remove dotenv
+[ ] Improve tests perfomance 
+[ ] Streaming files
+[ ] Use UTC at creating amz credentials
+
 
 ## 🔧 Prerequisites
 
