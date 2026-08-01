@@ -170,13 +170,3 @@ pub const S3Client = struct {
     }
 };
 
-//test "run all unit test" {
-//    _ = .{
-//        @import("client/implementation.zig"),
-//        //@import("bucket/operations.zig"),
-//        //@import("object/operations.zig"),
-//        @import("common/encoding.zig"),
-//        @import("common/validators.zig"),
-//        @import("common/xml.zig"),
-//    };
-//}
