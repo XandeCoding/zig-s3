@@ -172,10 +172,10 @@ test "bucket operations" {
     const io = std.testing.io;
 
     // Initialize test client with dummy credentials
-    const config = client_impl.S3Config{ 
-        .access_key_id = "admin", 
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
         .secret_access_key = "admin",
-        .region = "us-east-1", 
+        .region = "us-east-1",
         .endpoint = "http://localhost:9000",
     };
 

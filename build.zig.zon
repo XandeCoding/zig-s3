@@ -3,12 +3,7 @@
     .version = "0.2.0",
     .fingerprint = 0xf58a772c84221497,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{
-        .dotenv = .{
-            .url = "git+https://github.com/dying-will-bullet/dotenv.git#f6dff7ce2c39ceaafd00114c7d0674376cd82b87",
-            .hash = "dotenv-0.3.0-hfaNFtm3AACGiIZx5jDPHB4Q1QGs9BEMKH-sq32ZxRXa",
-        },
-    },
+    .dependencies = .{},
     .paths = .{
         // Only include necessary files in the package
         "src/",

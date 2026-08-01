@@ -162,6 +162,13 @@ The library uses Zig's error union type for robust error handling:
 | `S3Error.ConnectionFailed`   | Network or connection issues        |
 | `S3Error.InvalidResponse`    | Unexpected response from S3 service |
 
+## 🛤️ Roadmap
+
+[ ] Remove dotenv
+[ ] Improve tests perfomance 
+[ ] Streaming files
+[ ] Use UTC at creating amz credentials
+
 ## 🧪 Testing
 
 ### Unit Tests

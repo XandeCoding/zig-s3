@@ -11,12 +11,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // dotenv library
-    const dotenv_dep = b.dependency("dotenv", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
     // Create the library that others can use as a dependency
     const static_module = b.createModule(.{
         .root_source_file = b.path("src/s3/lib.zig"),
@@ -30,7 +24,6 @@ pub fn build(b: *std.Build) void {
     });
 
     lib.root_module.addImport("s3", s3_module);
-    lib.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
     b.installArtifact(lib);
 
     const exec_module = b.createModule(.{
@@ -45,7 +38,6 @@ pub fn build(b: *std.Build) void {
         .root_module = exec_module,
     });
     exe.root_module.addImport("s3", s3_module);
-    exe.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
     b.installArtifact(exe);
 
     // Create "run" step for the example
@@ -131,7 +123,7 @@ pub fn build(b: *std.Build) void {
     const modules_data = [_]struct { module: *std.Build.Module, filters: []const []const u8 }{
         .{ .module = encoding_module, .filters = &.{"encoding"} },
         .{ .module = time_module, .filters = &.{"time"} },
-        .{ .module = validators_module, .filters = &.{ "validators"} },
+        .{ .module = validators_module, .filters = &.{"validators"} },
         .{ .module = xml_module, .filters = &.{"xml"} },
         .{ .module = signer_module, .filters = &.{"signer"} },
         .{ .module = client_module, .filters = &.{"Client"} },
@@ -148,7 +140,7 @@ pub fn build(b: *std.Build) void {
         "Skip tests that do not match filters",
     ) orelse &.{};
 
-
+    // Unit Tests
     for (modules_data) |data| {
         var filters = data.filters;
         if (test_filters.len > 0) {
@@ -164,47 +156,25 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_unit_tests.step);
     }
 
-    // Unit tests
-    //const test_runner = b.path("test_runner.zig");
-    //const lib_unit_tests = b.addTest(.{
-    //    .root_module = s3_module,
-    //    .test_runner = .{ .path = test_runner, .mode = .simple }
-    //});
-    //const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-    //const test_step = b.step("test", "Run library tests");
-    //test_step.dependOn(&run_lib_unit_tests.step);
-
-    //const test_module = b.createModule(.{
-    //    .root_source_file = b.path("src/s3/lib.zig"),
-    //    .target = target,
-    //    .optimize = optimize,
-    //});
-    //const unit_tests = b.addTest(.{ .root_module = test_module, .filters = test_filters });
-    //unit_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
-    //const run_unit_tests = b.addRunArtifact(unit_tests);
-
-    //const test_step = b.step("test", "Run library tests");
-    //test_step.dependOn(&run_unit_tests.step);
-
     // Integration tests
-    //const integration_test_module = b.createModule(.{
-    //    .root_source_file = b.path("tests/integration/s3_client_test.zig"),
-    //    .target = target,
-    //    .optimize = optimize,
-    //});
-    //const integration_tests = b.addTest(.{
-    //    .root_module = integration_test_module,
-    //    .filters = test_filters,
-    //});
-    //integration_tests.root_module.addImport("s3", s3_module);
-    //integration_tests.root_module.addImport("dotenv", dotenv_dep.module("dotenv"));
+    const integration_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/integration/s3_client_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const integration_tests = b.addTest(.{
+        .root_module = integration_test_module,
+        .test_runner = .{ .path = test_runner, .mode = .simple },
+        .filters = test_filters,
+    });
+    integration_tests.root_module.addImport("s3", s3_module);
 
-    //const run_integration_tests = b.addRunArtifact(integration_tests);
-    //const integration_test_step = b.step("integration-test", "Run integration tests");
-    //integration_test_step.dependOn(&run_integration_tests.step);
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const integration_test_step = b.step("integration-test", "Run integration tests");
+    integration_test_step.dependOn(&run_integration_tests.step);
 
-    //// Add integration tests to main test step
-    //test_step.dependOn(&run_integration_tests.step);
+    // Add integration tests to main test step
+    test_step.dependOn(&run_integration_tests.step);
 
     // Add formatting
     const fmt = b.addFmt(.{

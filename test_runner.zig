@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Timestamp = std.Io.Timestamp;
+const Writer = std.Io.Writer;
+const mem = std.mem;
 
 const ResultName = enum {
     passed,
@@ -11,24 +13,16 @@ const Result = struct {
     passed: usize,
     failed: usize,
     leaked: usize,
-    protected: struct {
-        mutex: std.Io.Mutex,
-        io: std.Io,
-    },
 
-    pub fn init(io: std.Io) Result {
-        return .{ 
+    pub fn init() Result {
+        return .{
             .passed = 0,
             .failed = 0,
             .leaked = 0,
-            .protected = .{ .mutex = .init, .io = io },
         };
     }
 
     pub fn increase(self: *Result, name: ResultName) anyerror!void {
-        try self.protected.mutex.lock(self.protected.io);
-        defer self.protected.mutex.unlock(self.protected.io);
-
         switch (name) {
             .passed => self.passed += 1,
             .failed => self.failed += 1,
@@ -37,53 +31,96 @@ const Result = struct {
     }
 };
 
-fn calculate_total_time(io: std.Io, start_date: Timestamp) ![]u8 {
+fn calculate_total_time(io: std.Io, writer: *Writer, start_date: Timestamp) !void {
     const end_date = Timestamp.now(io, .awake);
-    const time_mili = Timestamp.durationTo(start_date, end_date).toMilliseconds();
-    var buffer: [100]u8 = undefined;
+    const duration = Timestamp.durationTo(start_date, end_date);
+    const time_mili = duration.toMilliseconds();
+    _ = writer.consumeAll();
 
-    //if (time_mili > 60000) {
-    //    return try std.fmt.bufPrint(&buffer, "{d}min", .{@divTrunc(time_mili, 6000)});
-    //}
-    //else if (time_mili > 1000) {
-    //    return try std.fmt.bufPrint(&buffer, "{d}s", .{@divTrunc(time_mili, 1000)});
-    //}
+    if (time_mili > 60000) {
+        return try writer.print("{d}min", .{@divTrunc(time_mili, 60000)});
+    } else if (time_mili > 1000) {
+        return try writer.print("{d}s", .{@divTrunc(time_mili, 1000)});
+    } else if (time_mili >= 1) {
+        try writer.print("{d}ms", .{time_mili});
+    } else {
+        try writer.print("{d}us", .{duration.toMicroseconds()});
+    }
 
-    return try std.fmt.bufPrint(&buffer, "{d}ms", .{time_mili});
+    try writer.flush();
+}
+
+fn get_module_name(writer: *Writer, fn_name: []const u8) !void {
+    const end_index = mem.indexOf(u8, fn_name, ".") orelse fn_name.len;
+    _ = writer.consumeAll();
+    try writer.print("{s}", .{fn_name[0..end_index]});
+    try writer.flush();
+}
+
+fn get_test_name(writer: *Writer, fn_name: []const u8) !void {
+    var position: usize = fn_name.len - 1;
+
+    while (position > 0) {
+        if (fn_name[position] == '.') break;
+        position -= 1;
+    }
+
+    _ = writer.consumeAll();
+    try writer.print("{s}", .{fn_name[position + 1 .. fn_name.len]});
+    try writer.flush();
 }
 
 pub fn main(init: std.process.Init) !void {
+    if (builtin.test_functions.len == 0) {
+        std.debug.print("\n{u} Module Skipped\n", .{'📦'});
+        return;
+    }
+
+    var func_buffer: [100]u8 = undefined;
+    var func_writer: Writer = .fixed(&func_buffer);
+
+    try get_module_name(&func_writer, builtin.test_functions[0].name);
+
     const gpa = init.gpa;
     const io = init.io;
 
-    var result = Result.init(io);
+    var result = Result.init();
+    var time_buffer: [20]u8 = undefined;
+    var time_writer: Writer = .fixed(&time_buffer);
+
+    std.debug.print("\n{u} Module: {s}\n ", .{ '📦', func_writer.buffered() });
 
     for (builtin.test_functions) |t| {
         std.testing.allocator_instance = .{};
         std.testing.io_instance = .init(gpa, .{});
-        
+        try get_test_name(&func_writer, t.name);
+        const test_name = func_writer.buffered();
+
         const start = Timestamp.now(io, .awake);
         t.func() catch |err| {
             try result.increase(.failed);
+            try calculate_total_time(io, &time_writer, start);
             std.debug.print(
-                "\n{s}: {s} ... FAIL ({s})\n",
-                .{ t.name, @errorName(err), try calculate_total_time(io, start) }
+                "\n{u} {s} ({s}) - Error: {s}",
+                .{ '🔴', test_name, time_writer.buffered(), @errorName(err) },
             );
+
             continue;
         };
 
         try result.increase(.passed);
-        std.debug.print("\n{s} ... PASSED ({s})", .{t.name, try calculate_total_time(io, start)});
+        try calculate_total_time(io, &time_writer, start);
+        std.debug.print("\n{u} {s} ({s})", .{ '🟢', test_name, time_writer.buffered() });
 
         std.testing.io_instance.deinit();
         if (std.testing.allocator_instance.deinit() == .leak) {
             try result.increase(.leaked);
-            std.debug.print("\n{s} ... LEAKED", .{t.name});
+            std.debug.print("\n{u} {s}", .{ '🟡', test_name });
         }
     }
 
-    std.debug.print("\n\nSUMMARY:\n", .{});
-    std.debug.print("\nPASSED: {d}", .{result.passed});
-    std.debug.print("\nFAILED: {d}", .{result.failed});
-    std.debug.print("\nLEAKED: {d}\n\n", .{result.leaked});
+    std.debug.print("\n\n{u} SUMMARY:\n", .{'📑'});
+    std.debug.print("\n{u} PASSED: {d}", .{ '🟢', result.passed });
+    std.debug.print("\n{u} FAILED: {d}", .{ '🔴', result.failed });
+    std.debug.print("\n{u} LEAKED: {d}\n", .{ '🟡', result.leaked });
 }

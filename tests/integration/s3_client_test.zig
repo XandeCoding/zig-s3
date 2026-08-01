@@ -1,6 +1,5 @@
 const std = @import("std");
 const s3 = @import("s3");
-const dotenv = @import("dotenv");
 
 const testing = std.testing;
 const io = testing.io;
@@ -18,45 +17,18 @@ const TestError = error{
     // ... other errors ...
 };
 
-fn loadEnvVars() !std.process.Environ.Map {
-    var env_map = try std.testing.environ.createMap(allocator);
-    try dotenv.loadFrom(allocator, io, &env_map, ".env", .{});
-
-    return env_map;
-}
-
-fn createS3ClientConfig(env_map: std.process.Environ.Map) !s3.S3ClientConfig {
-    const access_key = env_map.get("S3_ACCESS_KEY") orelse
-        return error.MissingAccessKey;
-    const secret_key = env_map.get("S3_SECRET_KEY") orelse
-        return error.MissingSecretKey;
-    const endpoint = env_map.get("S3_PUBLIC_ENDPOINT") orelse
-        return error.MissingEndpoint;
-
+fn createS3ClientConfig() !s3.S3ClientConfig {
     return s3.S3ClientConfig{
-        .access_key_id = access_key,
-        .secret_access_key = secret_key,
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
         .region = "us-west-1",
-        .endpoint = endpoint,
+        .endpoint = "http://localhost:9000",
     };
-}
-
-test "load env vars" {
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
-
-    const config = try createS3ClientConfig(env_map);
-    std.debug.print("Loaded S3 Config: {?s}\n", .{config.endpoint});
 }
 
 test "initialize client" {
     std.debug.print("\n=== Starting client initialization test ===\n", .{});
-
-    std.debug.print("Loading env vars...\n", .{});
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
-
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     std.debug.print("Initializing client...\n", .{});
@@ -71,10 +43,8 @@ test "validate endpoint" {
 
     // Initialize client
     std.debug.print("Loading env vars...\n", .{});
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     // Validate endpoint is not empty and accessible
@@ -111,10 +81,8 @@ test "create simple bucket" {
 
     // Initialize client
     std.debug.print("Loading env vars...\n", .{});
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     std.debug.print("Loaded config with endpoint: {?s}\n", .{config.endpoint});
 
     std.debug.print("Initializing client...\n", .{});
@@ -161,10 +129,8 @@ test "upload simple file to test-bucket" {
     std.debug.print("\n=== Starting simple file upload test ===\n", .{});
 
     // Initialize client
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -201,10 +167,8 @@ test "upload simple file to test-bucket" {
 test "full client lifecycle" {
     std.debug.print("\n=== Starting full client lifecycle test ===\n", .{});
     // Initialize client
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -329,10 +293,8 @@ test "full client lifecycle" {
 test "error handling" {
     std.debug.print("\n=== Starting error handling test ===\n", .{});
     // Initialize client
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -373,10 +335,8 @@ test "error handling" {
 test "pagination and prefixes" {
     std.debug.print("\n=== Starting pagination and prefixes test ===\n", .{});
     // Initialize client
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -452,8 +412,6 @@ test "pagination and prefixes" {
             if (page.len < page_size) break;
         }
 
-
-
         std.debug.print("Object appended, total objects: {d}, all objects: {d}...\n", .{ total_objects, all_objects.items.len });
         try testing.expectEqual(total_objects, all_objects.items.len);
     }
@@ -486,10 +444,8 @@ test "pagination and prefixes" {
 test "file upload and download" {
     std.debug.print("\n=== Starting file upload and download test ===\n", .{});
     // Initialize client
-    var env_map = try loadEnvVars();
-    defer env_map.deinit();
 
-    const config = try createS3ClientConfig(env_map);
+    const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
