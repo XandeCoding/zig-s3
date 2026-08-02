@@ -43,10 +43,10 @@ S3-compatible services.
 
 ## 🛤️ Roadmap
 
-[x] Remove dotenv
-[ ] Improve tests perfomance 
-[ ] Streaming files
-[ ] Use UTC at creating amz credentials
+- [x] Remove dotenv
+- [ ] Improve tests perfomance 
+- [ ] Streaming files
+- [ ] Use UTC at creating amz credentials
 
 
 ## 🔧 Prerequisites
