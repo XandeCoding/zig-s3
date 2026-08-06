@@ -111,6 +111,8 @@ pub const S3Client = struct {
             .percent_encoded => |p| if (p.len == 0) "" else p,
         };
 
+        //const uri_query = "";
+
         // Add required headers in specific order
         try headers.put("content-type", "application/xml");
         try headers.put("host", uri_host);
@@ -136,6 +138,7 @@ pub const S3Client = struct {
             .service = "s3",
         };
 
+        // TODO: treat ignored headers
         const params = signer.SigningParams{
             .method = @tagName(method),
             .path = uri_path,

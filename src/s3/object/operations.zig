@@ -83,6 +83,19 @@ pub fn getObject(self: *S3Client, bucket_name: []const u8, key: []const u8) ![]c
     return alloc_writer.toOwnedSlice();
 }
 
+fn deleteObjectCancellableFn(self: *S3Client, bucket_name: []const u8, key: []const u8) error{Canceled}!void {
+    const uri_str = fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, bucket_name, key }) catch {
+        return;
+    };
+    defer self.allocator.free(uri_str);
+    const uri = Uri.parse(uri_str) catch {
+        return;
+    };
+
+    _ = self.request(.DELETE, uri, null, null) catch {
+        return;
+    };
+}
 /// Delete an object from S3.
 ///
 /// This operation cannot be undone unless versioning is enabled on the bucket.
@@ -106,6 +119,45 @@ pub fn deleteObject(self: *S3Client, bucket_name: []const u8, key: []const u8) !
     if (req.status != .no_content) {
         return S3Error.InvalidResponse;
     }
+}
+
+pub const DeleteObjectParam = struct {
+    /// Key (path) of the object
+    key: []const u8,
+};
+/// Delete a list of object from S3.
+///
+/// This operation cannot be undone unless versioning is enabled on the bucket.
+///
+/// Parameters:
+///   - self: Pointer to initialized S3Client
+///   - bucket_name: Name of the bucket containing the object
+///   - key: Object key (path) to delete
+///
+/// Errors:
+///   - InvalidResponse: If deletion fails
+///   - BucketNotFound: If the bucket doesn't exist
+///   - ConnectionFailed: Network or connection issues
+///   - OutOfMemory: Memory allocation failure
+pub fn deleteObjectList(self: *S3Client, bucket_name: []const u8, object_list: []const DeleteObjectParam) !void {
+    var threaded: std.Io.Threaded = .init(self.allocator, .{ .async_limit = .unlimited, .concurrent_limit = .unlimited });
+    defer threaded.deinit();
+
+    const io = threaded.io();
+    var group: std.Io.Group = .init;
+    defer group.cancel(io);
+
+    for (object_list) |object| {
+        group.concurrent(io, deleteObjectCancellableFn, .{ self, bucket_name, object.key }) catch |err| {
+            std.debug.print("ERROR: {}\n", .{err});
+            return S3Error.InvalidResponse;
+        };
+    }
+
+    group.await(io) catch |err| {
+        std.debug.print("ERROR: {}\n", .{err});
+        return S3Error.InvalidResponse;
+    };
 }
 
 /// Object information returned by listObjects
@@ -381,7 +433,13 @@ test "list objects basic" {
     // Create test bucket and objects
     const bucket_name = "test-list-objects";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer {
+        const start = std.Io.Timestamp.now(io, .awake);
+        _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+        const end = std.Io.Timestamp.now(io, .awake);
+
+        std.debug.print("DELETE BUCKET DURATION: {d}s\n", .{std.Io.Timestamp.durationTo(start, end).toSeconds()});
+    }
 
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "test1.txt", .content = "Hello 1" },
@@ -394,9 +452,13 @@ test "list objects basic" {
         try putObject(test_client, bucket_name, obj.key, obj.content);
     }
     defer {
-        for (test_objects) |obj| {
-            _ = deleteObject(test_client, bucket_name, obj.key) catch {};
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
+        for (test_objects) |object| {
+            _ = delete_list.append(allocator, .{ .key = object.key }) catch {};
         }
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
     }
 
     // List all objects
@@ -456,9 +518,13 @@ test "list objects with prefix" {
         try putObject(test_client, bucket_name, obj.key, obj.content);
     }
     defer {
-        for (test_objects) |obj| {
-            _ = deleteObject(test_client, bucket_name, obj.key) catch {};
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
+        for (test_objects) |object| {
+            _ = delete_list.append(allocator, .{ .key = object.key }) catch {};
         }
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
     }
 
     // List objects with prefix
@@ -511,11 +577,19 @@ test "list objects pagination" {
         try putObject(test_client, bucket_name, key, content);
     }
     defer {
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
+
         i = 0;
         while (i < 5) : (i += 1) {
             const key = fmt.allocPrint(allocator, "test{d}.txt", .{i}) catch continue;
-            defer allocator.free(key);
-            _ = deleteObject(test_client, bucket_name, key) catch {};
+            _ = delete_list.append(allocator, .{ .key = key }) catch {};
+        }
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
+        for (delete_list.items) |object| {
+            allocator.free(object.key);
         }
     }
 
@@ -615,11 +689,48 @@ test "object operations" {
     try deleteObject(test_client, bucket_name, "admin");
 }
 
+test "delete objects list" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
+
+    var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
+
+    const bucket_name = "object-delete-objects-list";
+    try bucket_ops.createBucket(test_client, bucket_name);
+    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+
+    const test_data = "Hello, S3!";
+    try putObject(test_client, bucket_name, "1", test_data);
+    try putObject(test_client, bucket_name, "2", test_data);
+    try putObject(test_client, bucket_name, "3", test_data);
+
+    const list_objects: [3]DeleteObjectParam = .{
+        .{ .key = "1" },
+        .{ .key = "2" },
+        .{ .key = "3" },
+    };
+
+    try deleteObjectList(test_client, bucket_name, &list_objects);
+}
+
 test "object operations error handling" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{ .access_key_id = "admin", .secret_access_key = "admin", .region = "us-east-1", .endpoint = "http://localhost:9000" };
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
     var test_client = try S3Client.init(allocator, io, config);
     defer test_client.deinit();
@@ -744,6 +855,8 @@ test "object key validation" {
         "path/to/object.json",
         "special-chars_!@$&*().txt",
     };
+    var delete_object_list = std.ArrayList(DeleteObjectParam).empty;
+    defer delete_object_list.deinit(allocator);
 
     for (valid_keys) |key| {
         const test_data = "Test data";
@@ -754,8 +867,10 @@ test "object key validation" {
 
         try std.testing.expectEqualStrings(test_data, retrieved);
 
-        try deleteObject(test_client, bucket_name, key);
+        try delete_object_list.append(allocator, .{ .key = key });
     }
+
+    try deleteObjectList(test_client, bucket_name, delete_object_list.items);
 }
 
 test "list objects empty bucket" {
@@ -817,9 +932,13 @@ test "list objects with multiple prefixes" {
         try putObject(test_client, bucket_name, obj.key, obj.content);
     }
     defer {
-        for (test_objects) |obj| {
-            _ = deleteObject(test_client, bucket_name, obj.key) catch {};
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
+        for (test_objects) |object| {
+            _ = delete_list.append(allocator, .{ .key = object.key }) catch {};
         }
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
     }
 
     // Test different prefix scenarios
@@ -890,11 +1009,19 @@ test "list objects pagination with various sizes" {
         try putObject(test_client, bucket_name, key, content);
     }
     defer {
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
         i = 0;
         while (i < total_objects) : (i += 1) {
             const key = fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{i}) catch continue;
-            defer allocator.free(key);
-            _ = deleteObject(test_client, bucket_name, key) catch {};
+            _ = delete_list.append(allocator, .{ .key = key }) catch {};
+        }
+
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
+
+        for (delete_list.items) |object| {
+            allocator.free(object.key);
         }
     }
 
@@ -988,9 +1115,13 @@ test "list objects with special characters in prefix" {
         try putObject(test_client, bucket_name, obj.key, obj.content);
     }
     defer {
-        for (test_objects) |obj| {
-            _ = deleteObject(test_client, bucket_name, obj.key) catch {};
+        var delete_list = std.ArrayList(DeleteObjectParam).empty;
+        defer delete_list.deinit(allocator);
+
+        for (test_objects) |object| {
+            _ = delete_list.append(allocator, .{ .key = object.key }) catch {};
         }
+        _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
     }
 
     // Test listing with various special character prefixes
@@ -1077,8 +1208,10 @@ test "ObjectUploader basic functionality" {
     try std.testing.expectEqualStrings("tag2", parsed.value.tags[1]);
 
     // Clean up test objects
-    try deleteObject(test_client, bucket_name, "test.txt");
-    try deleteObject(test_client, bucket_name, "test.json");
+    var delete_object_list: [2]DeleteObjectParam = .{
+        .{ .key = "test.txt" }, .{ .key = "test.json" },
+    };
+    try deleteObjectList(test_client, bucket_name, &delete_object_list);
 }
 
 test "ObjectUploader file operations" {

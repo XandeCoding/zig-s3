@@ -37,3 +37,13 @@ test "encode URI" {
         try std.testing.expectEqualSlices(u8, actual, uri.expected);
     }
 }
+
+test "encode large URI" {
+    const allocator = std.testing.allocator;
+    const value = "large/=:?#[uri]+%@!$,;(testing):" ** 2048;
+
+    const encoded_value = try encodeURI(allocator, value);
+    defer allocator.free(encoded_value);
+
+    try std.testing.expectEqual(135168, encoded_value.len);
+}

@@ -370,6 +370,16 @@ pub fn hashPayload(allocator: Allocator, payload: ?[]const u8) ![]const u8 {
     return std.fmt.allocPrint(allocator, "{s}", .{std.fmt.bytesToHex(hash, .lower)});
 }
 
+pub fn hashPayloadToMD5(allocator: Allocator, payload: []const u8) ![]const u8 {
+    const base64_encoder: std.base64.Base64Encoder = .init(std.base64.standard_alphabet_chars, '=');
+    const hash = crypto.hash.Md5.hashResult(payload);
+    var buffer: [crypto.hash.Md5.digest_length * 3]u8 = undefined;
+
+    const encoded = base64_encoder.encode(&buffer, &hash);
+    // TODO: talvez utilizar buf print
+    return std.fmt.allocPrint(allocator, "{s}", .{encoded});
+}
+
 fn deriveSigningKey(
     allocator: Allocator,
     secret_key: []const u8,
