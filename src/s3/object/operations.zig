@@ -434,11 +434,7 @@ test "list objects basic" {
     const bucket_name = "test-list-objects";
     try bucket_ops.createBucket(test_client, bucket_name);
     defer {
-        const start = std.Io.Timestamp.now(io, .awake);
         _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
-        const end = std.Io.Timestamp.now(io, .awake);
-
-        std.debug.print("DELETE BUCKET DURATION: {d}s\n", .{std.Io.Timestamp.durationTo(start, end).toSeconds()});
     }
 
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
