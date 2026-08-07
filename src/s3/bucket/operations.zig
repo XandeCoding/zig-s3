@@ -277,7 +277,29 @@ test "bucket name validation" {
 
     for (valid_names) |name| {
         try createBucket(test_client, name);
-        try deleteBucket(test_client, name);
+    }
+    defer {
+        var threaded: std.Io.Threaded = .init(
+            allocator,
+            .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        );
+        defer threaded.deinit();
+        var group: std.Io.Group = .init;
+        const io_threaded = threaded.io();
+
+        for (valid_names) |name| {
+            _ = group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, name },
+            ) catch {};
+        }
+
+        _ = group.await(io) catch {};
     }
 }
 
@@ -293,14 +315,36 @@ test "list buckets" {
     };
 
     var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
 
     // Create some test buckets
     try createBucket(test_client, "test-bucket-1");
     try createBucket(test_client, "test-bucket-2");
+
     defer {
-        _ = deleteBucket(test_client, "test-bucket-1") catch {};
-        _ = deleteBucket(test_client, "test-bucket-2") catch {};
-        test_client.deinit();
+        var threaded: std.Io.Threaded = .init(
+            allocator,
+            .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        );
+        defer threaded.deinit();
+        var group: std.Io.Group = .init;
+        const io_threaded = threaded.io();
+
+        const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
+
+        for (buckets_name) |name| {
+            _ = group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, name },
+            ) catch {};
+        }
+
+        _ = group.await(io) catch {};
     }
 
     // List buckets
@@ -476,6 +520,14 @@ test "bucket operations with special characters" {
         .{ .name = "a" ** 64, .should_succeed = false }, // Too long
     };
 
+    var threaded: std.Io.Threaded = .init(
+        allocator,
+        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+    );
+    defer threaded.deinit();
+    var group: std.Io.Group = .init;
+    const io_threaded = threaded.io();
+
     for (test_cases) |case| {
         if (case.should_succeed) {
             // Should succeed
@@ -501,7 +553,15 @@ test "bucket operations with special characters" {
             try std.testing.expect(found);
 
             // Clean up
-            try deleteBucket(test_client, case.name);
+            try group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, case.name },
+            );
         } else {
             // Should fail
             try std.testing.expectError(
@@ -510,6 +570,8 @@ test "bucket operations with special characters" {
             );
         }
     }
+
+    try group.await(io);
 }
 
 test "bucket operations concurrency" {
@@ -539,11 +601,29 @@ test "bucket operations concurrency" {
     for (bucket_names) |name| {
         try createBucket(test_client, name);
     }
+
     defer {
-        // Clean up all buckets
+        var threaded: std.Io.Threaded = .init(
+            allocator,
+            .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        );
+        defer threaded.deinit();
+        var group: std.Io.Group = .init;
+        const io_threaded = threaded.io();
+
         for (bucket_names) |name| {
-            _ = deleteBucket(test_client, name) catch {};
+            _ = group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, name },
+            ) catch {};
         }
+
+        _ = group.await(io) catch {};
     }
 
     // Verify all buckets exist

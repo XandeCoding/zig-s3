@@ -48,3 +48,15 @@ test "search xml" {
         try std.testing.expectEqualStrings(item.expected, value_found);
     }
 }
+
+test "search in large xml" {
+    const allocator = std.testing.allocator;
+    const content = "lorem ipslum" ** 8096;
+
+    const xml = try std.fmt.allocPrint(allocator, "<content>{s}</content>", .{content});
+    defer allocator.free(xml);
+    const value_found = try getByKey(allocator, xml, "content");
+    defer allocator.free(value_found);
+
+    try std.testing.expectEqual(content.len, value_found.len);
+}
