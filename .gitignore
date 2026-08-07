@@ -16,3 +16,4 @@ zig-out/
 *.a
 !archive/
 !archive/**
+.tool-versions

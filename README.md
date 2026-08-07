@@ -44,9 +44,12 @@ S3-compatible services.
 ## 🛤️ Roadmap
 
 - [x] Remove dotenv
-- [ ] Improve tests perfomance 
+- [x] Improve tests perfomance 
 - [ ] Streaming files
+- [ ] Add all S3 operation options to functions
 - [ ] Use UTC at creating amz credentials
+- [ ] Break each object or bucket operation in a module
+- [ ] Run tests concurrently
 
 
 ## 🔧 Prerequisites
