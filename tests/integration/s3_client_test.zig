@@ -423,8 +423,14 @@ test "pagination and prefixes" {
             .prefix = prefix,
         });
         defer {
+            var delete_list = std.ArrayList(s3.DeleteObjectParam).empty;
+            defer delete_list.deinit(allocator);
+            for (objects) |item| {
+                _ = delete_list.append(allocator, .{ .key = item.key }) catch {};
+            }
+            _ = client.deleteObjectList(bucket_name, delete_list.items) catch {};
+
             for (objects) |object| {
-                _ = client.deleteObject(bucket_name, object.key) catch {};
                 allocator.free(object.key);
                 allocator.free(object.last_modified);
                 allocator.free(object.etag);

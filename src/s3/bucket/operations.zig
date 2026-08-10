@@ -193,14 +193,36 @@ test "list buckets" {
     };
 
     var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
 
     // Create some test buckets
     try createBucket(test_client, .{ .bucket_name = "test-bucket-1" });
     try createBucket(test_client, .{ .bucket_name = "test-bucket-2" });
+
     defer {
-        _ = deleteBucket(test_client, "test-bucket-1") catch {};
-        _ = deleteBucket(test_client, "test-bucket-2") catch {};
-        test_client.deinit();
+        var threaded: std.Io.Threaded = .init(
+            allocator,
+            .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        );
+        defer threaded.deinit();
+        var group: std.Io.Group = .init;
+        const io_threaded = threaded.io();
+
+        const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
+
+        for (buckets_name) |name| {
+            _ = group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, name },
+            ) catch {};
+        }
+
+        _ = group.await(io) catch {};
     }
 
     // List buckets
@@ -276,71 +298,234 @@ test "list buckets error handling" {
         listBuckets(test_client),
     );
 }
-// TODO: ADD THIS TO INTEGRATIONS TESTS
-//test "bucket lifecycle with validation" {
-//    const allocator = std.testing.allocator;
-//    const io = std.testing.io;
-//
-//    const config = client_impl.S3Config{
-//        .access_key_id = "admin",
-//        .secret_access_key = "admin",
-//        .region = "us-east-1",
-//        .endpoint = "http://localhost:9000",
-//    };
-//
-//    var test_client = try S3Client.init(allocator, io, config);
-//    defer test_client.deinit();
-//
-//    // Test bucket creation with valid name
-//    const bucket_name = "test-bucket-lifecycle";
-//    try createBucket(test_client, bucket_name);
-//
-//    // Verify bucket exists by listing
-//    const buckets = try listBuckets(test_client);
-//    defer {
-//        for (buckets) |bucket| {
-//            allocator.free(bucket.name);
-//            allocator.free(bucket.creation_date);
-//        }
-//        allocator.free(buckets);
-//    }
-//
-//    var found = false;
-//    for (buckets) |bucket| {
-//        if (std.mem.eql(u8, bucket.name, bucket_name)) {
-//            found = true;
-//            break;
-//        }
-//    }
-//    try std.testing.expect(found);
-//
-//    // Test duplicate bucket creation - in RustFS don't return an error (MinIo yes)
-//    createBucket(test_client, bucket_name) catch |err| {
-//        try std.testing.expect(S3Error.BucketAlreadyExists == err);
-//        return;
-//    };
-//    // Clean up
-//    try deleteBucket(test_client, bucket_name);
-//
-//    // Verify bucket is gone
-//    const buckets_after = try listBuckets(test_client);
-//    defer {
-//        for (buckets_after) |bucket| {
-//            allocator.free(bucket.name);
-//            allocator.free(bucket.creation_date);
-//        }
-//        allocator.free(buckets_after);
-//    }
-//
-//    found = false;
-//    for (buckets_after) |bucket| {
-//        if (std.mem.eql(u8, bucket.name, bucket_name)) {
-//            found = true;
-//            break;
-//        }
-//    }
-//    try std.testing.expect(!found);
-//}
+
+test "bucket lifecycle with validation" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
+
+    var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
+
+    // Test bucket creation with valid name
+    const bucket_name = "test-bucket-lifecycle";
+    try createBucket(test_client, bucket_name);
+
+    // Verify bucket exists by listing
+    const buckets = try listBuckets(test_client);
+    defer {
+        for (buckets) |bucket| {
+            allocator.free(bucket.name);
+            allocator.free(bucket.creation_date);
+        }
+        allocator.free(buckets);
+    }
+
+    var found = false;
+    for (buckets) |bucket| {
+        if (std.mem.eql(u8, bucket.name, bucket_name)) {
+            found = true;
+            break;
+        }
+    }
+    try std.testing.expect(found);
+
+    // Test duplicate bucket creation - in RustFS don't return an error (MinIo yes)
+    createBucket(test_client, bucket_name) catch |err| {
+        try std.testing.expect(S3Error.BucketAlreadyExists == err);
+        return;
+    };
+    // Clean up
+    try deleteBucket(test_client, bucket_name);
+
+    // Verify bucket is gone
+    const buckets_after = try listBuckets(test_client);
+    defer {
+        for (buckets_after) |bucket| {
+            allocator.free(bucket.name);
+            allocator.free(bucket.creation_date);
+        }
+        allocator.free(buckets_after);
+    }
+
+    found = false;
+    for (buckets_after) |bucket| {
+        if (std.mem.eql(u8, bucket.name, bucket_name)) {
+            found = true;
+            break;
+        }
+    }
+    try std.testing.expect(!found);
+}
+
+test "bucket operations with special characters" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
+
+    var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
+
+    // Test bucket names with various special characters
+    const test_cases = [_]struct {
+        name: []const u8,
+        should_succeed: bool,
+    }{
+        .{ .name = "normal-bucket-123", .should_succeed = true },
+        .{ .name = "bucket-with-dash", .should_succeed = true },
+        .{ .name = "bucket.with.dots", .should_succeed = true },
+        .{ .name = "bucket_with_underscore", .should_succeed = false },
+        .{ .name = "UPPERCASE-bucket", .should_succeed = false },
+        .{ .name = "bucket@with@at", .should_succeed = false },
+        .{ .name = "bucket#with#hash", .should_succeed = false },
+        .{ .name = "3-numeric-prefix", .should_succeed = true },
+        .{ .name = "-invalid-prefix", .should_succeed = false },
+        .{ .name = "invalid-suffix-", .should_succeed = false },
+        .{ .name = "a", .should_succeed = false }, // Too short
+        .{ .name = "ab", .should_succeed = false }, // Too short
+        .{ .name = "a" ** 64, .should_succeed = false }, // Too long
+    };
+
+    var threaded: std.Io.Threaded = .init(
+        allocator,
+        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+    );
+    defer threaded.deinit();
+    var group: std.Io.Group = .init;
+    const io_threaded = threaded.io();
+
+    for (test_cases) |case| {
+        if (case.should_succeed) {
+            // Should succeed
+            try createBucket(test_client, case.name);
+
+            // Verify bucket exists
+            const buckets = try listBuckets(test_client);
+            defer {
+                for (buckets) |bucket| {
+                    allocator.free(bucket.name);
+                    allocator.free(bucket.creation_date);
+                }
+                allocator.free(buckets);
+            }
+
+            var found = false;
+            for (buckets) |bucket| {
+                if (std.mem.eql(u8, bucket.name, case.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            try std.testing.expect(found);
+
+            // Clean up
+            try group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, case.name },
+            );
+        } else {
+            // Should fail
+            try std.testing.expectError(
+                error.InvalidBucketName,
+                createBucket(test_client, case.name),
+            );
+        }
+    }
+
+    try group.await(io);
+}
+
+test "bucket operations concurrency" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
+
+    var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
+
+    // Create multiple buckets concurrently
+    const bucket_names = [_][]const u8{
+        "concurrent-bucket-1",
+        "concurrent-bucket-2",
+        "concurrent-bucket-3",
+        "concurrent-bucket-4",
+        "concurrent-bucket-5",
+    };
+
+    // Create all buckets
+    for (bucket_names) |name| {
+        try createBucket(test_client, name);
+    }
+
+    defer {
+        var threaded: std.Io.Threaded = .init(
+            allocator,
+            .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        );
+        defer threaded.deinit();
+        var group: std.Io.Group = .init;
+        const io_threaded = threaded.io();
+
+        for (bucket_names) |name| {
+            _ = group.concurrent(
+                io_threaded,
+                struct {
+                    fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                        _ = deleteBucket(client, bucket_name) catch {};
+                    }
+                }.deleteBucketFn,
+                .{ test_client, name },
+            ) catch {};
+        }
+
+        _ = group.await(io) catch {};
+    }
+
+    // Verify all buckets exist
+    const buckets = try listBuckets(test_client);
+    defer {
+        for (buckets) |bucket| {
+            allocator.free(bucket.name);
+            allocator.free(bucket.creation_date);
+        }
+        allocator.free(buckets);
+    }
+
+    for (bucket_names) |name| {
+        var found = false;
+        for (buckets) |bucket| {
+            if (std.mem.eql(u8, bucket.name, name)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+}
+>>>>>>> b3da4905900363fd38e5f4611325c4c8390ab100
 
 test "bucket operations error cases" {
     const allocator = std.testing.allocator;

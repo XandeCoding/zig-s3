@@ -56,6 +56,8 @@ pub const ListObjectsOptions = object_ops.ListObjectsOptions;
 /// Helper struct for uploading different types of content to S3
 pub const ObjectUploader = object_ops.ObjectUploader;
 
+/// Helper to delete a list of Objects
+pub const DeleteObjectParam = object_ops.DeleteObjectParam;
 /// Main client interface that provides S3 operations.
 /// This struct wraps the internal implementation and provides a clean public API.
 pub const S3Client = struct {
@@ -146,6 +148,12 @@ pub const S3Client = struct {
         return object_ops.deleteObject(self.inner, bucket_name, key);
     }
 
+    /// Delete a list of objects from S3.
+    /// See object/operations.zig for details.
+    pub fn deleteObjectList(self: *S3Client, bucket_name: []const u8, object_list: []const DeleteObjectParam) !void {
+        return object_ops.deleteObjectList(self.inner, bucket_name, object_list);
+    }
+
     /// List objects in a bucket with optional filtering and pagination.
     /// Memory for the returned slice and its contents must be freed by the caller.
     ///
@@ -169,4 +177,3 @@ pub const S3Client = struct {
         return ObjectUploader.init(self.inner);
     }
 };
-
