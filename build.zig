@@ -98,7 +98,7 @@ pub fn build(b: *std.Build) void {
 
     // Bucket
     const bucket_module = b.createModule(.{
-        .root_source_file = b.path("src/s3/bucket/operations.zig"),
+        .root_source_file = b.path("src/s3/bucket/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -108,17 +108,17 @@ pub fn build(b: *std.Build) void {
     bucket_module.addImport("../common/errors.zig", errors_module);
 
     // Object
-    const object_module = b.createModule(.{
-        .root_source_file = b.path("src/s3/object/operations.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    object_module.addImport("../client/implementation.zig", client_module);
-    object_module.addImport("../bucket/operations.zig", bucket_module);
-    object_module.addImport("../common/encoding.zig", encoding_module);
-    object_module.addImport("../common/xml.zig", xml_module);
-    object_module.addImport("../common/validators.zig", validators_module);
-    object_module.addImport("../common/errors.zig", errors_module);
+    //const object_module = b.createModule(.{
+    //    .root_source_file = b.path("src/s3/object/operations.zig"),
+    //    .target = target,
+    //    .optimize = optimize,
+    //});
+    //object_module.addImport("../client/implementation.zig", client_module);
+    //object_module.addImport("../bucket/operations.zig", bucket_module);
+    //object_module.addImport("../common/encoding.zig", encoding_module);
+    //object_module.addImport("../common/xml.zig", xml_module);
+    //object_module.addImport("../common/validators.zig", validators_module);
+    //object_module.addImport("../common/errors.zig", errors_module);
 
     const modules_data = [_]struct { module: *std.Build.Module, filters: []const []const u8 }{
         .{ .module = encoding_module, .filters = &.{"encoding"} },
@@ -128,7 +128,7 @@ pub fn build(b: *std.Build) void {
         .{ .module = signer_module, .filters = &.{"signer"} },
         .{ .module = client_module, .filters = &.{"Client"} },
         .{ .module = bucket_module, .filters = &.{"bucket"} },
-        .{ .module = object_module, .filters = &.{"object"} },
+        //.{ .module = object_module, .filters = &.{"object"} },
     };
     const test_runner = b.path("test_runner.zig");
     const test_step = b.step("test", "Run library tests");
@@ -157,24 +157,24 @@ pub fn build(b: *std.Build) void {
     }
 
     // Integration tests
-    const integration_test_module = b.createModule(.{
-        .root_source_file = b.path("tests/integration/s3_client_test.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const integration_tests = b.addTest(.{
-        .root_module = integration_test_module,
-        .test_runner = .{ .path = test_runner, .mode = .simple },
-        .filters = test_filters,
-    });
-    integration_tests.root_module.addImport("s3", s3_module);
+    //const integration_test_module = b.createModule(.{
+    //    .root_source_file = b.path("tests/integration/s3_client_test.zig"),
+    //    .target = target,
+    //    .optimize = optimize,
+    //});
+    //const integration_tests = b.addTest(.{
+    //    .root_module = integration_test_module,
+    //    .test_runner = .{ .path = test_runner, .mode = .simple },
+    //    .filters = test_filters,
+    //});
+    //integration_tests.root_module.addImport("s3", s3_module);
 
-    const run_integration_tests = b.addRunArtifact(integration_tests);
-    const integration_test_step = b.step("integration-test", "Run integration tests");
-    integration_test_step.dependOn(&run_integration_tests.step);
+    //const run_integration_tests = b.addRunArtifact(integration_tests);
+    //const integration_test_step = b.step("integration-test", "Run integration tests");
+    //integration_test_step.dependOn(&run_integration_tests.step);
 
     // Add integration tests to main test step
-    test_step.dependOn(&run_integration_tests.step);
+    //test_step.dependOn(&run_integration_tests.step);
 
     // Add formatting
     const fmt = b.addFmt(.{

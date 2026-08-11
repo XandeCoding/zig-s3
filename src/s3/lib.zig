@@ -22,7 +22,7 @@
 //! ```
 const std = @import("std");
 const client = @import("client/implementation.zig");
-const bucket_ops = @import("bucket/operations.zig");
+const bucket_lib = @import("bucket/lib.zig");
 const object_ops = @import("object/operations.zig");
 const errors = @import("common/errors.zig");
 
@@ -45,7 +45,7 @@ pub const S3Error = errors.S3Error;
 pub const S3Config = client.S3Config;
 
 /// Information about a bucket in S3
-pub const BucketInfo = bucket_ops.BucketInfo;
+pub const BucketInfo = bucket_lib.bucket_ops.BucketInfo;
 
 /// Information about an object in S3
 pub const ObjectInfo = object_ops.ObjectInfo;
@@ -106,14 +106,14 @@ pub const S3Client = struct {
 
     /// Create a new bucket.
     /// See bucket/operations.zig for details.
-    pub fn createBucket(self: *S3Client, bucket_name: []const u8) !void {
-        return bucket_ops.createBucket(self.inner, bucket_name);
+    pub fn createBucket(self: *S3Client, options: bucket_lib.createBucketOptions) !void {
+        return bucket_lib.createBucket(self.inner, options);
     }
 
     /// Delete an existing bucket.
     /// See bucket/operations.zig for details.
-    pub fn deleteBucket(self: *S3Client, bucket_name: []const u8) !void {
-        return bucket_ops.deleteBucket(self.inner, bucket_name);
+    pub fn deleteBucket(self: *S3Client, options: bucket_lib.deleteBucketOptions) !void {
+        return bucket_lib.bucket_ops.deleteBucket(self.inner, options);
     }
 
     /// List all buckets owned by the authenticated user.
@@ -126,8 +126,8 @@ pub const S3Client = struct {
     ///     InvalidResponse: If listing fails
     ///     ConnectionFailed: Network or connection issues
     ///     OutOfMemory: Memory allocation failure
-    pub fn listBuckets(self: *S3Client) ![]BucketInfo {
-        return bucket_ops.listBuckets(self.inner);
+    pub fn listBuckets(self: *S3Client, options: bucket_lib.listBucketsOptions) ![]BucketInfo {
+        return bucket_lib.bucket_ops.listBuckets(self.inner, options);
     }
 
     /// Upload an object to S3.

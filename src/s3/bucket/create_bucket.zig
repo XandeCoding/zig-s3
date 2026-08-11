@@ -8,7 +8,8 @@ const client_impl = @import("../client/implementation.zig");
 const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 const validators = @import("../common/validators.zig");
-const operations = @import("./operations.zig");
+const deleteBucket = @import("delete_bucket.zig").deleteBucket;
+const listBuckets = @import("list_buckets.zig").listBuckets;
 
 pub const CreateBucketOptions = struct {
     bucket_name: []const u8,
@@ -22,7 +23,9 @@ pub const CreateBucketOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the bucket to create
+///   - options: Struct with create options
+///     - bucket_name: Name of the bucket to create
+///     - object_lock: Flag to lock objects deletion
 ///
 /// Errors:
 ///   - Conflict: The bucket name already exists
@@ -33,8 +36,9 @@ pub const CreateBucketOptions = struct {
 ///   - InvalidResponse: If bucket creation fails (e.g., name already taken)
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
-pub fn createBucket(self: *S3Client, create_bucket_params: CreateBucketOptions) !void {
-    const bucket_name = create_bucket_params.bucket_name;
+pub fn createBucket(self: *S3Client, options: CreateBucketOptions) !void {
+    // TODO: IMPLEMENT OBJECT LOCK
+    const bucket_name = options.bucket_name;
     if (validators.bucketNameIsValid(bucket_name) == false) {
         return S3Error.InvalidBucketName;
     }
@@ -62,7 +66,7 @@ pub fn createBucket(self: *S3Client, create_bucket_params: CreateBucketOptions) 
             .service_unavailable => {
                 return S3Error.ServiceUnavailable;
             },
-            // RustFS yet implemented name validation partially
+            // RustFS implemented name validation partially
             .not_implemented => {
                 return S3Error.ServerNotImplemented;
             },
@@ -72,7 +76,6 @@ pub fn createBucket(self: *S3Client, create_bucket_params: CreateBucketOptions) 
         }
     }
 }
-
 
 test "create simple bucket" {
     const allocator = std.testing.allocator;
@@ -107,7 +110,7 @@ test "bucket operations with custom endpoint" {
 
     // Test bucket operations with custom endpoint
     const bucket_name = "test-bucket-local";
-    try createBucket(test_client, bucket_name);
+    try createBucket(test_client, .{ .bucket_name = bucket_name });
 }
 
 test "create bucket with empty strings" {
@@ -130,12 +133,35 @@ test "create bucket with empty strings" {
         createBucket(test_client, .{ .bucket_name = "" }),
     );
 
-// TODO: CREATE TEST TO DELETE AN EMPTY BUCKET
-   // try std.testing.expectError(
-   //     error.InvalidResponse,
-   //     deleteBucket(test_client, ""),
-   // );
+    // TODO: CREATE TEST TO DELETE AN EMPTY BUCKET
+    // try std.testing.expectError(
+    //     error.InvalidResponse,
+    //     deleteBucket(test_client, ""),
+    // );
 }
+
+// TODO: TRATAR EXCEĆÃO OU FORĆAR NO RUSTFS
+//test "create bucket duplicated" {
+//    const allocator = std.testing.allocator;
+//    const io = std.testing.io;
+//
+//    const config = client_impl.S3Config{
+//        .access_key_id = "admin",
+//        .secret_access_key = "admin",
+//        .region = "us-east-1",
+//        .endpoint = "http://localhost:9000",
+//    };
+//
+//    var test_client = try S3Client.init(allocator, io, config);
+//    defer test_client.deinit();
+//
+//    try createBucket(test_client, .{ .bucket_name = "bucket-duplicated" });
+//    // Test empty bucket name
+//    try std.testing.expectError(
+//        error.BucketAlreadyExists,
+//        createBucket(test_client, .{ .bucket_name = "bucket-duplicated" }),
+//    );
+//}
 
 test "create bucket operation error cases" {
     const allocator = std.testing.allocator;
@@ -154,21 +180,21 @@ test "create bucket operation error cases" {
     // Test creating bucket with invalid characters
     try std.testing.expectError(
         error.InvalidBucketName,
-        createBucket(test_client, "Invalid.Bucket.Name"),
+        createBucket(test_client, .{ .bucket_name = "Invalid.Bucket.Name" }),
     );
 
     // Test creating bucket with invalid length
     try std.testing.expectError(
         error.InvalidBucketName,
-        createBucket(test_client, "a"),
+        createBucket(test_client, .{ .bucket_name = "a" }),
     );
 
     // Create a bucket and try to create it again
     const bucket_name = "duplicate-test-bucket";
-    try createBucket(test_client, bucket_name);
+    try createBucket(test_client, .{ .bucket_name = bucket_name });
 
     // RustFS permits to recreate a bucket with the same name multiple times (MinIO no)
-    createBucket(test_client, bucket_name) catch |err| {
+    createBucket(test_client, .{ .bucket_name = bucket_name }) catch |err| {
         try std.testing.expect(S3Error.BucketAlreadyExists == err);
         return;
     };
@@ -205,7 +231,7 @@ test "bucket operations region handling" {
         defer allocator.free(bucket_name);
 
         // Basic operations should work in any region
-        createBucket(test_client, .{ .bucket_name = bucket_name });
+        try createBucket(test_client, .{ .bucket_name = bucket_name });
     }
 }
 
@@ -234,11 +260,11 @@ test "create multiple buckets and check if exists" {
 
     // Create all buckets
     for (bucket_names) |name| {
-        try createBucket(test_client, name);
+        try createBucket(test_client, .{ .bucket_name = name });
     }
 
     // Verify all buckets exist
-    const buckets = try operations.listBuckets(test_client);
+    const buckets = try listBuckets(test_client, .{});
     defer {
         for (buckets) |bucket| {
             allocator.free(bucket.name);
@@ -297,10 +323,10 @@ test "create buckets with special characters" {
     for (test_cases) |case| {
         if (case.should_succeed) {
             // Should succeed
-            try createBucket(test_client, case.name);
+            try createBucket(test_client, .{ .bucket_name = case.name });
 
             // Verify bucket exists
-            const buckets = try operations.listBuckets(test_client);
+            const buckets = try listBuckets(test_client, .{});
             defer {
                 for (buckets) |bucket| {
                     allocator.free(bucket.name);
@@ -321,12 +347,11 @@ test "create buckets with special characters" {
             // Should fail
             try std.testing.expectError(
                 error.InvalidBucketName,
-                createBucket(test_client, case.name),
+                createBucket(test_client, .{ .bucket_name = case.name }),
             );
         }
     }
 }
-
 
 test "create bucket name validation" {
     const allocator = std.testing.allocator;
@@ -369,13 +394,61 @@ test "create bucket name validation" {
     };
 
     for (valid_names) |name| {
-        createBucket(test_client, .{ .bucket_name = name });
+        try createBucket(test_client, .{ .bucket_name = name });
     }
 }
 
+test "bucket operations concurrency" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
+    const config = client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    };
 
-test "After all" {
+    var test_client = try S3Client.init(allocator, io, config);
+    defer test_client.deinit();
+
+    // Create multiple buckets concurrently
+    const bucket_names = [_][]const u8{
+        "concurrent-bucket-1",
+        "concurrent-bucket-2",
+        "concurrent-bucket-3",
+        "concurrent-bucket-4",
+        "concurrent-bucket-5",
+    };
+
+    // Create all buckets
+    for (bucket_names) |name| {
+        try createBucket(test_client, .{ .bucket_name = name });
+    }
+
+    // Verify all buckets exist
+    const buckets = try listBuckets(test_client, .{});
+    defer {
+        for (buckets) |bucket| {
+            allocator.free(bucket.name);
+            allocator.free(bucket.creation_date);
+        }
+        allocator.free(buckets);
+    }
+
+    for (bucket_names) |name| {
+        var found = false;
+        for (buckets) |bucket| {
+            if (std.mem.eql(u8, bucket.name, name)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+}
+
+test "After all - Create bucket" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -387,6 +460,40 @@ test "After all" {
     });
     defer test_client.deinit();
 
-    //try operations.deleteBucket(test_client, "test-bucket");
-    //TODO: Delete buckets from region test
+    const buckets_name: [25][]const u8 = .{
+        "123-numeric-prefix",                "3-numeric-prefix",
+        "another-valid-bucket",              "bucket-with-dash",
+        "bucket-with-numbers-123",           "bucket.with.dots",
+        "concurrent-bucket-1",               "concurrent-bucket-2",
+        "concurrent-bucket-3",               "concurrent-bucket-4",
+        "concurrent-bucket-5",               "contains.period",
+        "duplicate-test-bucket",             "normal-bucket-123",
+        "region-test-bucket-ap-southeast-1", "region-test-bucket-eu-west-1",
+        "region-test-bucket-us-east-1",      "region-test-bucket-us-west-1",
+        "test-bucket",                       "valid-bucket-name",
+        "concurrent-bucket-1",               "concurrent-bucket-2",
+        "concurrent-bucket-3",               "concurrent-bucket-4",
+        "concurrent-bucket-5",
+    };
+
+    var threaded: std.Io.Threaded = .init(
+        allocator,
+        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+    );
+    defer threaded.deinit();
+    var group: std.Io.Group = .init;
+    const io_threaded = threaded.io();
+
+    // Clean up
+    for (buckets_name) |name| {
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
+                    _ = deleteBucket(client, .{ .bucket_name = bucket_name }) catch {};
+                }
+            }.deleteBucketFn,
+            .{ test_client, name },
+        );
+    }
 }

@@ -376,7 +376,7 @@ test "upload different types" {
     defer test_client.deinit();
     const bucket_name = "test-upload-different-types";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     const directory = std.Io.Dir.cwd();
     const file = try directory.createFile(io, "upload.txt", .{});
@@ -434,7 +434,7 @@ test "list objects basic" {
     const bucket_name = "test-list-objects";
     try bucket_ops.createBucket(test_client, bucket_name);
     defer {
-        _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+        _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
     }
 
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
@@ -501,7 +501,7 @@ test "list objects with prefix" {
     // Create test bucket and objects
     const bucket_name = "test-list-prefix";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "folder1/test1.txt", .content = "Hello 1" },
@@ -561,7 +561,7 @@ test "list objects pagination" {
     // Create test bucket and objects
     const bucket_name = "test-list-pagination";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Create 5 test objects
     var i: usize = 0;
@@ -645,7 +645,7 @@ test "list objects error cases" {
 
     const bucket_name = "error-cases-test";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Test invalid max_keys
     try std.testing.expectError(
@@ -672,7 +672,7 @@ test "object operations" {
 
     const bucket_name = "object-operations-test";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Test basic object lifecycle
     const test_data = "Hello, S3!";
@@ -701,7 +701,7 @@ test "delete objects list" {
 
     const bucket_name = "object-delete-objects-list";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     const test_data = "Hello, S3!";
     try putObject(test_client, bucket_name, "1", test_data);
@@ -769,7 +769,7 @@ test "object operations with large data" {
     }
     const bucket_name = "large-data-test";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Test large object operations
     try putObject(test_client, bucket_name, "large-file.bin", large_data);
@@ -799,7 +799,7 @@ test "object operations with custom endpoint" {
     // Test object operations with custom endpoint
     const bucket_name = "custom-endpoint-bucket";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     const test_data = "Testing with custom endpoint";
     try putObject(test_client, bucket_name, "custom-endpoint-test.txt", test_data);
@@ -828,7 +828,7 @@ test "object key validation" {
 
     const bucket_name = "object-validation-bucket";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Test various invalid object keys
     const invalid_keys = [_][]const u8{
@@ -886,7 +886,7 @@ test "list objects empty bucket" {
     // Create empty bucket
     const bucket_name = "test-empty-bucket";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // List objects in empty bucket
     const objects = try listObjects(test_client, bucket_name, .{});
@@ -911,7 +911,7 @@ test "list objects with multiple prefixes" {
 
     const bucket_name = "test-prefix-bucket";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Create objects with different prefixes
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
@@ -990,7 +990,7 @@ test "list objects pagination with various sizes" {
 
     const bucket_name = "test-pagination-bucket";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Create 25 test objects
     const total_objects = 25;
@@ -1093,7 +1093,7 @@ test "list objects with special characters in prefix" {
 
     const bucket_name = "test-special-chars";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Create objects with special characters in paths
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
@@ -1117,6 +1117,7 @@ test "list objects with special characters in prefix" {
         for (test_objects) |object| {
             _ = delete_list.append(allocator, .{ .key = object.key }) catch {};
         }
+
         _ = deleteObjectList(test_client, bucket_name, delete_list.items) catch {};
     }
 
@@ -1157,7 +1158,7 @@ test "ObjectUploader basic functionality" {
     // Create test bucket
     const bucket_name = "test-uploader";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     var uploader = ObjectUploader.init(test_client);
 
@@ -1227,7 +1228,7 @@ test "ObjectUploader file operations" {
     // Create test bucket
     const bucket_name = "test-file-uploader";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     var uploader = ObjectUploader.init(test_client);
 
@@ -1314,7 +1315,7 @@ test "ObjectUploader with custom endpoint" {
     // Create test bucket
     const bucket_name = "test-custom-endpoint";
     try bucket_ops.createBucket(test_client, bucket_name);
-    defer _ = bucket_ops.deleteBucket(test_client, bucket_name) catch {};
+    defer _ = bucket_ops.deleteBucket(test_client, .{ .bucket_name = bucket_name }) catch {};
 
     // Test basic upload with custom endpoint
     const test_data = "Testing with custom endpoint";
