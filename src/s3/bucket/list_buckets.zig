@@ -208,6 +208,7 @@ test "list buckets error handling" {
         listBuckets(test_client, .{}),
     );
 }
+
 test "After All - List Buckets" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;

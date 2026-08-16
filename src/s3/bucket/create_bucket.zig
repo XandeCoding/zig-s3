@@ -132,36 +132,7 @@ test "create bucket with empty strings" {
         error.InvalidBucketName,
         createBucket(test_client, .{ .bucket_name = "" }),
     );
-
-    // TODO: CREATE TEST TO DELETE AN EMPTY BUCKET
-    // try std.testing.expectError(
-    //     error.InvalidResponse,
-    //     deleteBucket(test_client, ""),
-    // );
 }
-
-// TODO: TRATAR EXCEĆÃO OU FORĆAR NO RUSTFS
-//test "create bucket duplicated" {
-//    const allocator = std.testing.allocator;
-//    const io = std.testing.io;
-//
-//    const config = client_impl.S3Config{
-//        .access_key_id = "admin",
-//        .secret_access_key = "admin",
-//        .region = "us-east-1",
-//        .endpoint = "http://localhost:9000",
-//    };
-//
-//    var test_client = try S3Client.init(allocator, io, config);
-//    defer test_client.deinit();
-//
-//    try createBucket(test_client, .{ .bucket_name = "bucket-duplicated" });
-//    // Test empty bucket name
-//    try std.testing.expectError(
-//        error.BucketAlreadyExists,
-//        createBucket(test_client, .{ .bucket_name = "bucket-duplicated" }),
-//    );
-//}
 
 test "create bucket operation error cases" {
     const allocator = std.testing.allocator;
