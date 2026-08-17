@@ -30,20 +30,12 @@ pub const GetObjectOptions = struct {
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
 pub fn getObject(self: *S3Client, options: GetObjectOptions) ![]const u8 {
-    const uri_str = try fmt.allocPrint(
-        self.allocator, 
-        "{s}/{s}/{s}", 
-        .{ self.config.endpoint, options.bucket_name, options.key }
-    );
+    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, options.bucket_name, options.key });
     defer self.allocator.free(uri_str);
 
     var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 1024 * 1024);
     defer alloc_writer.deinit();
-    const req = try self.request(
-        .GET,
-        try Uri.parse(uri_str), 
-        &alloc_writer.writer, null
-    );
+    const req = try self.request(.GET, try Uri.parse(uri_str), &alloc_writer.writer, null);
 
     if (req.status == .not_found) {
         return S3Error.ObjectNotFound;
@@ -72,7 +64,6 @@ test "get not existent object" {
     // Test object not found
     try std.testing.expectError(
         error.ObjectNotFound,
-        getObject(test_client, "test-bucket", "nonexistent-key"),
+        getObject(test_client, .{ .bucket_name = "test-bucket", .key = "nonexistent-key" }),
     );
 }
-

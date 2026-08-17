@@ -5,9 +5,9 @@ const Writer = std.Io.Writer;
 const S3Error = @import("../common/errors.zig").S3Error;
 const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
-const putObject = @import("put_object.zig").putObject; 
-const createBucket = @import("../bucket/create_bucket.zig").createBucket;
-const deleteBucket = @import("../bucket/delete_bucket.zig").deleteBucket;
+const putObject = @import("put_object.zig").putObject;
+const createBucket = @import("../bucket/lib.zig").createBucket;
+const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
 pub const DeleteObjectOptions = struct {
     bucket_name: []const u8,
@@ -29,11 +29,7 @@ pub const DeleteObjectOptions = struct {
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
 pub fn deleteObject(self: *S3Client, options: DeleteObjectOptions) !void {
-    const uri_str = try fmt.allocPrint(
-        self.allocator,
-        "{s}/{s}/{s}",
-        .{ self.config.endpoint, options.bucket_name, options.key }
-    );
+    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, options.bucket_name, options.key });
     defer self.allocator.free(uri_str);
 
     const req = try self.request(.DELETE, try Uri.parse(uri_str), null, null);
@@ -55,7 +51,7 @@ test "Before All - Delete Object" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [1][]const u8 = .{ "object-delete-objects-list" };
+    const buckets_name: [1][]const u8 = .{"object-delete-objects-list"};
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -79,7 +75,7 @@ test "Before All - Delete Object" {
     }
 
     // TODO: CHECK IF IT'S NECESSARY CREATE OTHER BUCKETS
-    const test_objects = [_]struct { key: []const u8, content: []const u8 }{
+    const test_objects = [_]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
         .{ .bucket_name = "object-delete-objects-list", .key = "1", .content = "Hello, S3!" },
         .{ .bucket_name = "object-delete-objects-list", .key = "2", .content = "Hello, S3!" },
         .{ .bucket_name = "object-delete-objects-list", .key = "3", .content = "Hello, S3!" },
@@ -87,29 +83,29 @@ test "Before All - Delete Object" {
 
     // TODO: DEIXAR PARALELO
     for (test_objects) |obj| {
-        try putObject(test_client, obj.bucket_name, obj.key, obj.content);
+        try putObject(test_client, .{ .bucket_name = obj.bucket_name, .key = obj.key, .data = obj.content });
     }
 }
 
 // TODO: REFACTOR THIS TEST
-test "delete objects list" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    const config = client_impl.S3Config{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
-    defer test_client.deinit();
-
-    const bucket_name = "object-delete-objects-list";
-
-    const test_data = "Hello, S3!";
-}
+//test "delete objects list" {
+//    const allocator = std.testing.allocator;
+//    const io = std.testing.io;
+//
+//    const config = client_impl.S3Config{
+//        .access_key_id = "admin",
+//        .secret_access_key = "admin",
+//        .region = "us-east-1",
+//        .endpoint = "http://localhost:9000",
+//    };
+//
+//    var test_client = try S3Client.init(allocator, io, config);
+//    defer test_client.deinit();
+//
+//    const bucket_name = "object-delete-objects-list";
+//
+//    const test_data = "Hello, S3!";
+//}
 
 // TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS
 test "After All - Delete Objects" {

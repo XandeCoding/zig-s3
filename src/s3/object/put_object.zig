@@ -4,9 +4,10 @@ const validators = @import("../common/validators.zig");
 const S3Error = @import("../common/errors.zig").S3Error;
 const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
-const createBucket = @import("../bucket/create_bucket.zig").createBucket;
-const deleteBucket = @import("../bucket/delete_bucket.zig").deleteBucket;
+const createBucket = @import("../bucket/lib.zig").createBucket;
+const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 const getObject = @import("./get_object.zig").getObject;
+const deleteObject = @import("./delete_object.zig").deleteObject;
 
 // TODO: implement object_lock
 pub const PutObjectOptions = struct {
@@ -39,7 +40,7 @@ pub fn putObject(self: *S3Client, options: PutObjectOptions) !void {
 
     const uri_str = try std.fmt.allocPrint(
         self.allocator,
-        "{s}/{s}/{s}", 
+        "{s}/{s}/{s}",
         .{ self.config.endpoint, options.bucket_name, key },
     );
     defer self.allocator.free(uri_str);
@@ -66,8 +67,8 @@ test "Before All - Put Object" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [1][]const u8 = .{ 
-        "large-data-test","object-invalid-name-bucket",
+    const buckets_name: [3][]const u8 = .{
+        "large-data-test",            "object-invalid-name-bucket",
         "object-invalid-name-bucket",
     };
 
@@ -93,7 +94,6 @@ test "Before All - Put Object" {
     }
 }
 
-
 test "put an invalid key" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -112,7 +112,7 @@ test "put an invalid key" {
     const invalid_key = "";
     try std.testing.expectError(
         error.InvalidObjectKey,
-        putObject(test_client, "test-bucket", invalid_key, "test data"),
+        putObject(test_client, .{ .bucket_name = "test-bucket", .key = invalid_key, .data = "test data" }),
     );
 }
 
@@ -141,9 +141,9 @@ test "put large file" {
     const bucket_name = "large-data-test";
 
     // Test large object operations
-    try putObject(test_client, bucket_name, "large-file.bin", large_data);
+    try putObject(test_client, .{ .bucket_name = bucket_name, .key = "large-file.bin", .data = large_data });
 
-    const retrieved = try getObject(test_client, bucket_name, "large-file.bin");
+    const retrieved = try getObject(test_client, .{ .bucket_name = bucket_name, .key = "large-file.bin" });
     defer allocator.free(retrieved);
 
     try std.testing.expectEqualSlices(u8, large_data, retrieved);
@@ -176,7 +176,7 @@ test "put invalid keys" {
     for (invalid_keys) |key| {
         try std.testing.expectError(
             error.InvalidObjectKey,
-            putObject(test_client, bucket_name, key, "test data"),
+            putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = "test data" }),
         );
     }
 }
@@ -203,19 +203,18 @@ test "put valid keys" {
         "path/to/object.json",
         "special-chars_!@$&*().txt",
     };
-    
+
     for (valid_keys) |key| {
         const test_data = "Test data";
-        try putObject(test_client, bucket_name, key, test_data);
+        try putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = test_data });
 
-        const retrieved = try getObject(test_client, bucket_name, key);
+        const retrieved = try getObject(test_client, .{ .bucket_name = bucket_name, .key = key });
         defer allocator.free(retrieved);
 
         try std.testing.expectEqualStrings(test_data, retrieved);
     }
 }
 
-// TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS
 test "After All - Put Object" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -228,15 +227,36 @@ test "After All - Put Object" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
-
+    const buckets_name: [3][]const u8 = .{
+        "large-data-test",            "object-invalid-name-bucket",
+        "object-invalid-name-bucket",
+    };
     var threaded: std.Io.Threaded = .init(
         allocator,
-        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+        .{ .concurrent_limit = .unlimited },
     );
     defer threaded.deinit();
     var group: std.Io.Group = .init;
     const io_threaded = threaded.io();
+
+    const test_objects = [_]struct { bucket_name: []const u8,  key: []const u8 }{
+        .{ .bucket_name = "large-data-test", .key = "large-file.bin" },
+        .{ .bucket_name = "object-valid-name-bucket", .key = "valid/key.txt" },
+        .{ .bucket_name = "object-valid-name-bucket", .key = "path/to/object.json" },
+        .{ .bucket_name = "object-valid-name-bucket", .key = "special-chars_!@$&*().txt" },
+    };
+
+    for (test_objects) |obj| {
+       try group.concurrent(
+            io_threaded,
+            struct {
+                fn deleteObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8) !void {
+                    _ = deleteObject(client, .{ .bucket_name = bucket_name, .key = key }) catch {};
+                }
+            }.deleteObjectFn,
+            .{ test_client, obj.bucket_name, obj.key },
+        );
+    }
 
     // Clean up
     for (buckets_name) |name| {

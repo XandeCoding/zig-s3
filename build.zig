@@ -108,17 +108,17 @@ pub fn build(b: *std.Build) void {
     bucket_module.addImport("../common/errors.zig", errors_module);
 
     // Object
-    //const object_module = b.createModule(.{
-    //    .root_source_file = b.path("src/s3/object/operations.zig"),
-    //    .target = target,
-    //    .optimize = optimize,
-    //});
-    //object_module.addImport("../client/implementation.zig", client_module);
-    //object_module.addImport("../bucket/operations.zig", bucket_module);
-    //object_module.addImport("../common/encoding.zig", encoding_module);
-    //object_module.addImport("../common/xml.zig", xml_module);
-    //object_module.addImport("../common/validators.zig", validators_module);
-    //object_module.addImport("../common/errors.zig", errors_module);
+    const object_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    object_module.addImport("../client/implementation.zig", client_module);
+    object_module.addImport("../bucket/lib.zig", bucket_module);
+    object_module.addImport("../common/encoding.zig", encoding_module);
+    object_module.addImport("../common/xml.zig", xml_module);
+    object_module.addImport("../common/validators.zig", validators_module);
+    object_module.addImport("../common/errors.zig", errors_module);
 
     const modules_data = [_]struct { module: *std.Build.Module, filters: []const []const u8 }{
         .{ .module = encoding_module, .filters = &.{"encoding"} },
@@ -128,7 +128,7 @@ pub fn build(b: *std.Build) void {
         .{ .module = signer_module, .filters = &.{"signer"} },
         .{ .module = client_module, .filters = &.{"Client"} },
         .{ .module = bucket_module, .filters = &.{"bucket"} },
-        //.{ .module = object_module, .filters = &.{"object"} },
+        .{ .module = object_module, .filters = &.{"object"} },
     };
     const test_runner = b.path("test_runner.zig");
     const test_step = b.step("test", "Run library tests");

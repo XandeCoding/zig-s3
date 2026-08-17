@@ -7,9 +7,9 @@ const encoding = @import("../common/encoding.zig");
 const xml = @import("../common/xml.zig");
 const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
-const putObject = @import("put_object.zig").putObject; 
-const createBucket = @import("../bucket/create_bucket.zig").createBucket;
-const deleteBucket = @import("../bucket/delete_bucket.zig").deleteBucket;
+const putObject = @import("put_object.zig").putObject;
+const createBucket = @import("../bucket/lib.zig").createBucket;
+const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
 /// Object information returned by listObjects
 pub const ObjectInfo = struct {
@@ -90,11 +90,7 @@ pub fn listObjects(
         try query.appendSlice(self.allocator, start_after_value);
     }
 
-    const uri_str = try fmt.allocPrint(
-        self.allocator, 
-        "{s}/{s}?{s}",
-        .{ self.config.endpoint, options.bucket_name, query.items }
-    );
+    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}?{s}", .{ self.config.endpoint, options.bucket_name, query.items });
     defer self.allocator.free(uri_str);
 
     var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 4096);
@@ -157,11 +153,7 @@ test "Before All - List Objects" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [1][]const u8 = .{ 
-        "test-list-objects", "test-list-prefix",
-        "test-list-pagination", "error-cases-test",
-        "test-empty-bucket"
-    };
+    const buckets_name: [8][]const u8 = .{ "test-list-objects", "test-list-prefix", "test-list-pagination", "error-cases-test", "test-empty-bucket", "test-prefix-bucket", "test-pagination-bucket", "test-special-chars" };
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -185,7 +177,7 @@ test "Before All - List Objects" {
     }
 
     // TODO: CHECK IF IT'S NECESSARY CREATE OTHER BUCKETS
-    const test_objects = [_]struct { key: []const u8, content: []const u8 }{
+    const test_objects = [24]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
         .{ .bucket_name = "test-list-objects", .key = "test1.txt", .content = "Hello 1" },
         .{ .bucket_name = "test-list-objects", .key = "test2.txt", .content = "Hello 2" },
         .{ .bucket_name = "test-list-objects", .key = "folder/test3.txt", .content = "Hello 3" },
@@ -197,13 +189,25 @@ test "Before All - List Objects" {
         .{ .bucket_name = "test-list-pagination", .key = "test3.txt", .content = "Content 3" },
         .{ .bucket_name = "test-list-pagination", .key = "test4.txt", .content = "Content 4" },
         .{ .bucket_name = "test-list-pagination", .key = "test5.txt", .content = "Content 5" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder1/a.txt", .content = "a" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder1/b.txt", .content = "b" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder2/c.txt", .content = "c" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder2/subfolder/d.txt", .content = "d" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder3/e.txt", .content = "e" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "root.txt", .content = "root" },
+        .{ .bucket_name = "test-special-chars", .key = "special!chars/test1.txt", .content = "1" },
+        .{ .bucket_name = "test-special-chars", .key = "special@chars/test2.txt", .content = "2" },
+        .{ .bucket_name = "test-special-chars", .key = "special*chars/test3.txt", .content = "3" },
+        .{ .bucket_name = "test-special-chars", .key = "special$chars/test4.txt", .content = "4" },
+        .{ .bucket_name = "test-special-chars", .key = "special_chars/test5.txt", .content = "5" },
+        .{ .bucket_name = "test-special-chars", .key = "special:20chars/test6.txt", .content = "6" },
+        .{ .bucket_name = "test-special-chars", .key = "special+chars/test7.txt", .content = "7" },
     };
 
     // TODO: DEIXAR PARALELO
     for (test_objects) |obj| {
-        try putObject(test_client, obj.bucket_name, obj.key, obj.content);
+        try putObject(test_client, .{ .bucket_name = obj.bucket_name, .key = obj.key, .data = obj.content });
     }
-
 }
 
 test "list objects basic" {
@@ -228,7 +232,7 @@ test "list objects basic" {
     };
 
     // List all objects
-    const objects = try listObjects(test_client, bucket_name, .{});
+    const objects = try listObjects(test_client, .{ .bucket_name = bucket_name });
     defer {
         for (objects) |object| {
             allocator.free(object.key);
@@ -258,14 +262,12 @@ test "list objects with prefix" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{
+    var test_client = try S3Client.init(allocator, io, .{
         .access_key_id = "admin",
         .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
+    });
     defer test_client.deinit();
 
     // Create test bucket and objects
@@ -273,7 +275,8 @@ test "list objects with prefix" {
 
     // List objects with prefix
     // TODO: CHECK WITH PREFIX folder2/
-    const objects = try listObjects(test_client, bucket_name, .{
+    const objects = try listObjects(test_client, .{
+        .bucket_name = bucket_name,
         .prefix = "folder1/",
     });
     defer {
@@ -297,21 +300,20 @@ test "list objects pagination" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{
+    var test_client = try S3Client.init(allocator, io, .{
         .access_key_id = "admin",
         .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
+    });
     defer test_client.deinit();
 
     // Create test bucket and objects
     const bucket_name = "test-list-pagination";
 
     // List first page (2 objects)
-    const page1 = try listObjects(test_client, bucket_name, .{
+    const page1 = try listObjects(test_client, .{
+        .bucket_name = bucket_name,
         .max_keys = 2,
     });
     defer {
@@ -326,7 +328,8 @@ test "list objects pagination" {
     try std.testing.expectEqual(@as(usize, 2), page1.len);
 
     // List second page using start_after
-    const page2 = try listObjects(test_client, bucket_name, .{
+    const page2 = try listObjects(test_client, .{
+        .bucket_name = bucket_name,
         .max_keys = 2,
         .start_after = page1[1].key,
     });
@@ -349,20 +352,18 @@ test "list objects error cases" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{
+    var test_client = try S3Client.init(allocator, io, .{
         .access_key_id = "admin",
         .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
+    });
     defer test_client.deinit();
 
     // Test non-existent bucket
     try std.testing.expectError(
         error.BucketNotFound,
-        listObjects(test_client, "nonexistent-bucket", .{}),
+        listObjects(test_client, .{ .bucket_name = "nonexistent-bucket" }),
     );
 
     const bucket_name = "error-cases-test";
@@ -370,7 +371,8 @@ test "list objects error cases" {
     // Test invalid max_keys
     try std.testing.expectError(
         error.InvalidResponse,
-        listObjects(test_client, bucket_name, .{
+        listObjects(test_client, .{
+            .bucket_name = bucket_name,
             .max_keys = 1001, // Max allowed is 1000
         }),
     );
@@ -380,21 +382,203 @@ test "list objects empty bucket" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{
+    var test_client = try S3Client.init(allocator, io, .{
         .access_key_id = "admin",
         .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
+    });
     defer test_client.deinit();
 
     // List objects in empty bucket
-    const objects = try listObjects(test_client, "test-empty-bucket", .{});
+    const objects = try listObjects(test_client, .{ .bucket_name = "test-empty-bucket" });
     defer allocator.free(objects);
 
     try std.testing.expectEqual(@as(usize, 0), objects.len);
+}
+
+test "list objects with multiple prefixes" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    const bucket_name = "test-prefix-bucket";
+
+    // Test different prefix scenarios
+    const test_cases = [_]struct {
+        prefix: []const u8,
+        expected_count: usize,
+    }{
+        .{ .prefix = "folder1/", .expected_count = 2 },
+        .{ .prefix = "folder2/", .expected_count = 2 },
+        .{ .prefix = "folder2/subfolder/", .expected_count = 1 },
+        .{ .prefix = "folder3/", .expected_count = 1 },
+        .{ .prefix = "", .expected_count = 6 }, // All objects
+        .{ .prefix = "nonexistent/", .expected_count = 0 },
+    };
+
+    for (test_cases) |case| {
+        const objects = try listObjects(test_client, .{
+            .bucket_name = bucket_name,
+            .prefix = case.prefix,
+        });
+        defer {
+            for (objects) |object| {
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(objects);
+        }
+
+        try std.testing.expectEqual(case.expected_count, objects.len);
+
+        // Verify all objects start with prefix
+        for (objects) |object| {
+            if (case.prefix.len > 0) {
+                try std.testing.expect(std.mem.startsWith(u8, object.key, case.prefix));
+            }
+        }
+    }
+}
+
+test "list objects pagination with various sizes" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    const bucket_name = "test-pagination-bucket";
+
+    // Create 25 test objects
+    // // TODO: talvez colocar no before all, checar se é necessário deletar
+    const total_objects = 25;
+    var i: usize = 0;
+    while (i < total_objects) : (i += 1) {
+        const key = try fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{i}); // pad with zeros for correct sorting
+        defer allocator.free(key);
+
+        const content = try fmt.allocPrint(allocator, "Content {d}", .{i});
+        defer allocator.free(content);
+
+        try putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = content });
+    }
+
+    // Test different page sizes
+    const page_sizes = [_]u32{ 5, 10, 15 };
+    for (page_sizes) |page_size| {
+        var collected_objects = std.ArrayList([]const u8).empty;
+        defer {
+            for (collected_objects.items) |key| {
+                allocator.free(key);
+            }
+            collected_objects.deinit(allocator);
+        }
+
+        var last_key: ?[]const u8 = null;
+        // TODO: COLOCAR TRAVA DE TENTATIVAS - ALTO
+        while (true) {
+            const page = try listObjects(test_client, .{
+                .bucket_name = bucket_name,
+                .max_keys = page_size,
+                .start_after = last_key,
+            });
+            defer {
+                for (page) |object| {
+                    allocator.free(object.last_modified);
+                    allocator.free(object.etag);
+                    allocator.free(object.key);
+                }
+                allocator.free(page);
+            }
+
+            if (page.len == 0) break;
+
+            for (page) |object| {
+                if (last_key == null or !std.mem.eql(u8, object.key, last_key.?)) {
+                    try collected_objects.append(allocator, try allocator.dupe(u8, object.key));
+                }
+            }
+
+            if (page.len < page_size) break;
+
+            if (last_key) |key| {
+                allocator.free(key);
+            }
+            last_key = try allocator.dupe(u8, page[page.len - 1].key);
+        }
+
+        if (last_key) |key| {
+            allocator.free(key);
+        }
+
+        // Verify we got all objects and they're in order
+        try std.testing.expectEqual(@as(usize, total_objects), collected_objects.items.len);
+        for (collected_objects.items, 0..) |key, idx| {
+            const expected = try fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{idx});
+            defer allocator.free(expected);
+            try std.testing.expectEqualStrings(expected, key);
+        }
+    }
+}
+
+test "list objects with special characters in prefix" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    const bucket_name = "test-special-chars";
+
+    // Create objects with special characters in paths
+    const test_objects = [_]struct { key: []const u8, content: []const u8 }{
+        .{ .key = "special!chars/test1.txt", .content = "1" },
+        .{ .key = "special@chars/test2.txt", .content = "2" },
+        .{ .key = "special*chars/test3.txt", .content = "3" },
+        .{ .key = "special$chars/test4.txt", .content = "4" },
+        .{ .key = "special_chars/test5.txt", .content = "5" },
+        .{ .key = "special:20chars/test6.txt", .content = "6" },
+        .{ .key = "special+chars/test7.txt", .content = "7" },
+    };
+
+    // Test listing with various special character prefixes
+    for (test_objects) |obj| {
+        const prefix = obj.key[0 .. std.mem.indexOf(u8, obj.key, "/").? + 1];
+        const objects = try listObjects(test_client, .{
+            .bucket_name = bucket_name,
+            .prefix = prefix,
+        });
+        defer {
+            for (objects) |object| {
+                allocator.free(object.key);
+                allocator.free(object.last_modified);
+                allocator.free(object.etag);
+            }
+            allocator.free(objects);
+        }
+
+        try std.testing.expectEqual(@as(usize, 1), objects.len);
+        try std.testing.expectEqualStrings(obj.key, objects[0].key);
+    }
 }
 
 // TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS

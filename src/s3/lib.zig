@@ -23,7 +23,7 @@
 const std = @import("std");
 const client = @import("client/implementation.zig");
 const bucket_lib = @import("bucket/lib.zig");
-const object_ops = @import("object/operations.zig");
+const object_lib = @import("object/lib.zig");
 const errors = @import("common/errors.zig");
 
 /// Configuration for the S3 client handler.
@@ -48,16 +48,16 @@ pub const S3Config = client.S3Config;
 pub const BucketInfo = bucket_lib.bucket_ops.BucketInfo;
 
 /// Information about an object in S3
-pub const ObjectInfo = object_ops.ObjectInfo;
+pub const ObjectInfo = object_lib.ObjectInfo;
 
 /// Options for listing objects in a bucket
-pub const ListObjectsOptions = object_ops.ListObjectsOptions;
+pub const ListObjectsOptions = object_lib.ListObjectsOptions;
 
 /// Helper struct for uploading different types of content to S3
-pub const ObjectUploader = object_ops.ObjectUploader;
+pub const ObjectUploader = object_lib.ObjectUploader;
 
 /// Helper to delete a list of Objects
-pub const DeleteObjectParam = object_ops.DeleteObjectParam;
+pub const DeleteObjectParam = object_lib.DeleteObjectParam;
 /// Main client interface that provides S3 operations.
 /// This struct wraps the internal implementation and provides a clean public API.
 pub const S3Client = struct {
@@ -132,26 +132,20 @@ pub const S3Client = struct {
 
     /// Upload an object to S3.
     /// See object/operations.zig for details.
-    pub fn putObject(self: *S3Client, bucket_name: []const u8, key: []const u8, data: []const u8) !void {
-        return object_ops.putObject(self.inner, bucket_name, key, data);
+    pub fn putObject(self: *S3Client, options: object_lib.PutObjectOptions) !void {
+        return object_lib.putObject(self.inner, options);
     }
 
     /// Download an object from S3.
     /// See object/operations.zig for details.
-    pub fn getObject(self: *S3Client, bucket_name: []const u8, key: []const u8) ![]const u8 {
-        return object_ops.getObject(self.inner, bucket_name, key);
+    pub fn getObject(self: *S3Client, options: object_lib.GetObjectOptions) ![]const u8 {
+        return object_lib.getObject(self.inner, options);
     }
 
     /// Delete an object from S3.
     /// See object/operations.zig for details.
-    pub fn deleteObject(self: *S3Client, bucket_name: []const u8, key: []const u8) !void {
-        return object_ops.deleteObject(self.inner, bucket_name, key);
-    }
-
-    /// Delete a list of objects from S3.
-    /// See object/operations.zig for details.
-    pub fn deleteObjectList(self: *S3Client, bucket_name: []const u8, object_list: []const DeleteObjectParam) !void {
-        return object_ops.deleteObjectList(self.inner, bucket_name, object_list);
+    pub fn deleteObject(self: *S3Client, options: object_lib.DeleteObjectOptions) !void {
+        return object_lib.deleteObject(self.inner, options);
     }
 
     /// List objects in a bucket with optional filtering and pagination.
@@ -168,8 +162,8 @@ pub const S3Client = struct {
     ///     InvalidResponse: If listing fails
     ///     ConnectionFailed: Network or connection issues
     ///     OutOfMemory: Memory allocation failure
-    pub fn listObjects(self: *S3Client, bucket_name: []const u8, options: ListObjectsOptions) ![]ObjectInfo {
-        return object_ops.listObjects(self.inner, bucket_name, options);
+    pub fn listObjects(self: *S3Client, options: object_lib.ListObjectsOptions) ![]ObjectInfo {
+        return object_lib.listObjects(self.inner, options);
     }
 
     /// Create an object uploader helper for this client
