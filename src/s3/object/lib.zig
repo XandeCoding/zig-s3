@@ -18,12 +18,3 @@ pub const DeleteObjectOptions = deleteObjectOps.deleteObjectOptions;
 const objectUploaderOps = @import("object_uploader.zig");
 pub const ObjectUploader = objectUploaderOps.ObjectUploader;
 
-test "test objects" {
-    _ = .{
-        @import("get_object.zig"),
-        @import("put_object.zig"),
-        @import("delete_object.zig"),
-        @import("object_uploader.zig"),
-        @import("list_objects.zig"),
-    };
-}

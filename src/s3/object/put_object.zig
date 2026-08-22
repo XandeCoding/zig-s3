@@ -96,7 +96,7 @@ test "Before All - Put Object" {
     try group.await(io_threaded);
 }
 
-test "put an invalid key" {
+test "put object with an invalid key" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -122,7 +122,7 @@ test "put an invalid key" {
     );
 }
 
-test "put large file" {
+test "put object large" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -159,7 +159,7 @@ test "put large file" {
     try std.testing.expectEqualSlices(u8, large_data, retrieved);
 }
 
-test "put invalid keys" {
+test "put objects with invalid keys" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -195,7 +195,7 @@ test "put invalid keys" {
     }
 }
 
-test "put valid keys" {
+test "put objects with valid keys" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
