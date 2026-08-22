@@ -74,40 +74,53 @@ test "Before All - Delete Object" {
         );
     }
 
-    // TODO: CHECK IF IT'S NECESSARY CREATE OTHER BUCKETS
+    try group.await(io_threaded);
+
     const test_objects = [_]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
         .{ .bucket_name = "object-delete-objects-list", .key = "1", .content = "Hello, S3!" },
         .{ .bucket_name = "object-delete-objects-list", .key = "2", .content = "Hello, S3!" },
         .{ .bucket_name = "object-delete-objects-list", .key = "3", .content = "Hello, S3!" },
     };
 
-    // TODO: DEIXAR PARALELO
     for (test_objects) |obj| {
-        try putObject(test_client, .{ .bucket_name = obj.bucket_name, .key = obj.key, .data = obj.content });
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn putObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8, data: []const u8) !void {
+                    _ = putObject(client, .{
+                        .bucket_name = bucket_name,
+                        .key = key,
+                        .data = data,
+                    }) catch {};
+                }
+            }.putObjectFn,
+            .{ test_client, obj.bucket_name, obj.key, obj.content },
+        );
+
+        try group.await(io_threaded);
     }
 }
 
-// TODO: REFACTOR THIS TEST
-//test "delete objects list" {
-//    const allocator = std.testing.allocator;
-//    const io = std.testing.io;
-//
-//    const config = client_impl.S3Config{
-//        .access_key_id = "admin",
-//        .secret_access_key = "admin",
-//        .region = "us-east-1",
-//        .endpoint = "http://localhost:9000",
-//    };
-//
-//    var test_client = try S3Client.init(allocator, io, config);
-//    defer test_client.deinit();
-//
-//    const bucket_name = "object-delete-objects-list";
-//
-//    const test_data = "Hello, S3!";
-//}
+test "delete objects list" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
 
-// TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS
+    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    const bucket_name = "object-delete-objects-list";
+    const objects_list: [3][]const u8 = .{ "1", "2", "3" };
+
+    for (objects_list) |key| {
+        try deleteObject(test_client, .{ .bucket_name = bucket_name, .key = key });
+    }
+}
+
 test "After All - Delete Objects" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -120,7 +133,7 @@ test "After All - Delete Objects" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
+    const buckets_name: [1][]const u8 = .{"object-delete-objects-list"};
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -131,6 +144,26 @@ test "After All - Delete Objects" {
     const io_threaded = threaded.io();
 
     // Clean up
+    const test_objects = [_]struct { bucket_name: []const u8, key: []const u8 }{
+        .{ .bucket_name = "object-delete-objects-list", .key = "1" },
+        .{ .bucket_name = "object-delete-objects-list", .key = "2" },
+        .{ .bucket_name = "object-delete-objects-list", .key = "3" },
+    };
+
+    for (test_objects) |obj| {
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn deleteObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8) !void {
+                    _ = deleteObject(client, .{ .bucket_name = bucket_name, .key = key }) catch {};
+                }
+            }.deleteObjectFn,
+            .{ test_client, obj.bucket_name, obj.key },
+        );
+    }
+
+    try group.await(io_threaded);
+
     for (buckets_name) |name| {
         try group.concurrent(
             io_threaded,
@@ -142,4 +175,6 @@ test "After All - Delete Objects" {
             .{ test_client, name },
         );
     }
+
+    try group.await(io_threaded);
 }

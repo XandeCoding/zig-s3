@@ -311,14 +311,12 @@ test "ObjectUploader with custom endpoint" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
-    const config = client_impl.S3Config{
+    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
         .access_key_id = "admin",
         .secret_access_key = "admin",
         .region = "us-east-1",
         .endpoint = "http://localhost:9000",
-    };
-
-    var test_client = try S3Client.init(allocator, io, config);
+    });
     defer test_client.deinit();
 
     var uploader = ObjectUploader.init(test_client);
@@ -336,7 +334,6 @@ test "ObjectUploader with custom endpoint" {
     try std.testing.expectEqualStrings(test_data, retrieved);
 }
 
-// TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS
 test "After All - Object Uploader" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -349,7 +346,10 @@ test "After All - Object Uploader" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
+    const buckets_name: [4][]const u8 = .{
+        "test-upload-different-types", "test-uploader",
+        "test-file-uploader",          "test-custom-endpoint",
+    };
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -360,6 +360,30 @@ test "After All - Object Uploader" {
     const io_threaded = threaded.io();
 
     // Clean up
+    const test_objects = [_]struct { bucket_name: []const u8, key: []const u8 }{
+        .{ .bucket_name = "test-upload-different-types", .key = "images/upload.txt" },
+        .{ .bucket_name = "test-upload-different-types", .key = "text/hello.txt" },
+        .{ .bucket_name = "test-upload-different-types", .key = "data/user.json" },
+        .{ .bucket_name = "test-uploader", .key = "test.txt" },
+        .{ .bucket_name = "test-uploader", .key = "test.json" },
+        .{ .bucket_name = "test-file-uploader", .key = "uploaded.txt" },
+        .{ .bucket_name = "test-custom-endpoint", .key = "test.txt" },
+    };
+
+    for (test_objects) |obj| {
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn deleteObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8) !void {
+                    _ = deleteObject(client, .{ .bucket_name = bucket_name, .key = key }) catch {};
+                }
+            }.deleteObjectFn,
+            .{ test_client, obj.bucket_name, obj.key },
+        );
+    }
+
+    try group.await(io_threaded);
+
     for (buckets_name) |name| {
         try group.concurrent(
             io_threaded,
@@ -372,15 +396,5 @@ test "After All - Object Uploader" {
         );
     }
 
-    // const test_objects = [_]struct { key: []const u8, content: []const u8 }{
-    //     .{ .bucket_name = "test-upload-different-types", .key = "images/upload.txt" },
-    //     .{ .bucket_name = "test-upload-different-types", .key = "text/hello.txt" },
-    //     .{ .bucket_name = "test-upload-different-types", .key = "data/user.json" },
-    // };
-
-    // // TODO: DEIXAR PARALELO
-    // for (test_objects) |obj| {
-    //     try deleteObject(test_client, obj.bucket_name, obj.key, obj.content);
-    // }
-
+    try group.await(io_threaded);
 }

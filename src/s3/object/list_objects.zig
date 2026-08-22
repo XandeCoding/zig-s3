@@ -8,6 +8,7 @@ const xml = @import("../common/xml.zig");
 const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
 const putObject = @import("put_object.zig").putObject;
+const deleteObject = @import("delete_object.zig").deleteObject;
 const createBucket = @import("../bucket/lib.zig").createBucket;
 const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
@@ -153,7 +154,12 @@ test "Before All - List Objects" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [8][]const u8 = .{ "test-list-objects", "test-list-prefix", "test-list-pagination", "error-cases-test", "test-empty-bucket", "test-prefix-bucket", "test-pagination-bucket", "test-special-chars" };
+    const buckets_name: [8][]const u8 = .{
+        "test-list-objects",      "test-list-prefix",
+        "test-list-pagination",   "error-cases-test",
+        "test-empty-bucket",      "test-prefix-bucket",
+        "test-pagination-bucket", "test-special-chars",
+    };
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -176,8 +182,9 @@ test "Before All - List Objects" {
         );
     }
 
-    // TODO: CHECK IF IT'S NECESSARY CREATE OTHER BUCKETS
-    const test_objects = [24]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
+    try group.await(io_threaded);
+
+    const test_objects = [49]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
         .{ .bucket_name = "test-list-objects", .key = "test1.txt", .content = "Hello 1" },
         .{ .bucket_name = "test-list-objects", .key = "test2.txt", .content = "Hello 2" },
         .{ .bucket_name = "test-list-objects", .key = "folder/test3.txt", .content = "Hello 3" },
@@ -195,6 +202,31 @@ test "Before All - List Objects" {
         .{ .bucket_name = "test-prefix-bucket", .key = "folder2/subfolder/d.txt", .content = "d" },
         .{ .bucket_name = "test-prefix-bucket", .key = "folder3/e.txt", .content = "e" },
         .{ .bucket_name = "test-prefix-bucket", .key = "root.txt", .content = "root" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj000.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj001.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj002.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj003.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj004.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj005.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj006.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj007.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj008.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj009.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj010.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj011.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj012.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj013.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj014.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj015.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj016.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj017.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj018.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj019.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj020.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj021.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj022.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj023.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj024.txt", .content = "Content pagination" },
         .{ .bucket_name = "test-special-chars", .key = "special!chars/test1.txt", .content = "1" },
         .{ .bucket_name = "test-special-chars", .key = "special@chars/test2.txt", .content = "2" },
         .{ .bucket_name = "test-special-chars", .key = "special*chars/test3.txt", .content = "3" },
@@ -204,9 +236,22 @@ test "Before All - List Objects" {
         .{ .bucket_name = "test-special-chars", .key = "special+chars/test7.txt", .content = "7" },
     };
 
-    // TODO: DEIXAR PARALELO
     for (test_objects) |obj| {
-        try putObject(test_client, .{ .bucket_name = obj.bucket_name, .key = obj.key, .data = obj.content });
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn putObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8, data: []const u8) !void {
+                    _ = putObject(client, .{
+                        .bucket_name = bucket_name,
+                        .key = key,
+                        .data = data,
+                    }) catch {};
+                }
+            }.putObjectFn,
+            .{ test_client, obj.bucket_name, obj.key, obj.content },
+        );
+
+        try group.await(io_threaded);
     }
 }
 
@@ -274,7 +319,6 @@ test "list objects with prefix" {
     const bucket_name = "test-list-prefix";
 
     // List objects with prefix
-    // TODO: CHECK WITH PREFIX folder2/
     const objects = try listObjects(test_client, .{
         .bucket_name = bucket_name,
         .prefix = "folder1/",
@@ -342,7 +386,6 @@ test "list objects pagination" {
         allocator.free(page2);
     }
 
-    // TODO: MAYBE IT'S GOOD TO CHECK THE CONTENT
     try std.testing.expectEqual(@as(usize, 2), page2.len);
     try std.testing.expect(!std.mem.eql(u8, page1[0].key, page2[0].key));
     try std.testing.expect(!std.mem.eql(u8, page1[1].key, page2[0].key));
@@ -464,18 +507,7 @@ test "list objects pagination with various sizes" {
     const bucket_name = "test-pagination-bucket";
 
     // Create 25 test objects
-    // // TODO: talvez colocar no before all, checar se é necessário deletar
     const total_objects = 25;
-    var i: usize = 0;
-    while (i < total_objects) : (i += 1) {
-        const key = try fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{i}); // pad with zeros for correct sorting
-        defer allocator.free(key);
-
-        const content = try fmt.allocPrint(allocator, "Content {d}", .{i});
-        defer allocator.free(content);
-
-        try putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = content });
-    }
 
     // Test different page sizes
     const page_sizes = [_]u32{ 5, 10, 15 };
@@ -489,8 +521,9 @@ test "list objects pagination with various sizes" {
         }
 
         var last_key: ?[]const u8 = null;
-        // TODO: COLOCAR TRAVA DE TENTATIVAS - ALTO
-        while (true) {
+        var attempts: u8 = 10;
+        while (attempts > 0) {
+            attempts = attempts - 1;
             const page = try listObjects(test_client, .{
                 .bucket_name = bucket_name,
                 .max_keys = page_size,
@@ -549,7 +582,7 @@ test "list objects with special characters in prefix" {
 
     const bucket_name = "test-special-chars";
 
-    // Create objects with special characters in paths
+    // Objects with special characters in paths
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "special!chars/test1.txt", .content = "1" },
         .{ .key = "special@chars/test2.txt", .content = "2" },
@@ -581,7 +614,6 @@ test "list objects with special characters in prefix" {
     }
 }
 
-// TODO: CHECAR SE É NECESSÁRIO DELETAR OS OBJETOS
 test "After All - List Objects" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -594,7 +626,64 @@ test "After All - List Objects" {
     });
     defer test_client.deinit();
 
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
+    const buckets_name: [8][]const u8 = .{
+        "test-list-objects",      "test-list-prefix",
+        "test-list-pagination",   "error-cases-test",
+        "test-empty-bucket",      "test-prefix-bucket",
+        "test-pagination-bucket", "test-special-chars",
+    };
+
+    const test_objects = [49]struct { bucket_name: []const u8, key: []const u8, content: []const u8 }{
+        .{ .bucket_name = "test-list-objects", .key = "test1.txt", .content = "Hello 1" },
+        .{ .bucket_name = "test-list-objects", .key = "test2.txt", .content = "Hello 2" },
+        .{ .bucket_name = "test-list-objects", .key = "folder/test3.txt", .content = "Hello 3" },
+        .{ .bucket_name = "test-list-prefix", .key = "folder1/test1.txt", .content = "Hello 1" },
+        .{ .bucket_name = "test-list-prefix", .key = "folder1/test2.txt", .content = "Hello 2" },
+        .{ .bucket_name = "test-list-prefix", .key = "folder2/test3.txt", .content = "Hello 3" },
+        .{ .bucket_name = "test-list-pagination", .key = "test1.txt", .content = "Content 1" },
+        .{ .bucket_name = "test-list-pagination", .key = "test2.txt", .content = "Content 2" },
+        .{ .bucket_name = "test-list-pagination", .key = "test3.txt", .content = "Content 3" },
+        .{ .bucket_name = "test-list-pagination", .key = "test4.txt", .content = "Content 4" },
+        .{ .bucket_name = "test-list-pagination", .key = "test5.txt", .content = "Content 5" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder1/a.txt", .content = "a" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder1/b.txt", .content = "b" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder2/c.txt", .content = "c" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder2/subfolder/d.txt", .content = "d" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "folder3/e.txt", .content = "e" },
+        .{ .bucket_name = "test-prefix-bucket", .key = "root.txt", .content = "root" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj000.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj001.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj002.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj003.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj004.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj005.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj006.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj007.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj008.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj009.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj010.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj011.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj012.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj013.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj014.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj015.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj016.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj017.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj018.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj019.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj020.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj021.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj022.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj023.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-pagination-bucket", .key = "obj024.txt", .content = "Content pagination" },
+        .{ .bucket_name = "test-special-chars", .key = "special!chars/test1.txt", .content = "1" },
+        .{ .bucket_name = "test-special-chars", .key = "special@chars/test2.txt", .content = "2" },
+        .{ .bucket_name = "test-special-chars", .key = "special*chars/test3.txt", .content = "3" },
+        .{ .bucket_name = "test-special-chars", .key = "special$chars/test4.txt", .content = "4" },
+        .{ .bucket_name = "test-special-chars", .key = "special_chars/test5.txt", .content = "5" },
+        .{ .bucket_name = "test-special-chars", .key = "special:20chars/test6.txt", .content = "6" },
+        .{ .bucket_name = "test-special-chars", .key = "special+chars/test7.txt", .content = "7" },
+    };
 
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -605,6 +694,20 @@ test "After All - List Objects" {
     const io_threaded = threaded.io();
 
     // Clean up
+    for (test_objects) |obj| {
+        try group.concurrent(
+            io_threaded,
+            struct {
+                fn deleteObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8) !void {
+                    _ = deleteObject(client, .{ .bucket_name = bucket_name, .key = key }) catch {};
+                }
+            }.deleteObjectFn,
+            .{ test_client, obj.bucket_name, obj.key },
+        );
+    }
+
+    try group.await(io_threaded);
+
     for (buckets_name) |name| {
         try group.concurrent(
             io_threaded,
@@ -616,4 +719,6 @@ test "After All - List Objects" {
             .{ test_client, name },
         );
     }
+
+    try group.await(io_threaded);
 }

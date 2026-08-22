@@ -68,8 +68,8 @@ test "Before All - Put Object" {
     defer test_client.deinit();
 
     const buckets_name: [3][]const u8 = .{
-        "large-data-test",            "object-invalid-name-bucket",
-        "object-invalid-name-bucket",
+        "large-data-test",          "object-invalid-name-bucket",
+        "object-valid-name-bucket",
     };
 
     var threaded: std.Io.Threaded = .init(
@@ -92,6 +92,8 @@ test "Before All - Put Object" {
             .{ test_client, name },
         );
     }
+
+    try group.await(io_threaded);
 }
 
 test "put an invalid key" {
@@ -112,7 +114,11 @@ test "put an invalid key" {
     const invalid_key = "";
     try std.testing.expectError(
         error.InvalidObjectKey,
-        putObject(test_client, .{ .bucket_name = "test-bucket", .key = invalid_key, .data = "test data" }),
+        putObject(test_client, .{
+            .bucket_name = "test-bucket",
+            .key = invalid_key,
+            .data = "test data",
+        }),
     );
 }
 
@@ -141,7 +147,11 @@ test "put large file" {
     const bucket_name = "large-data-test";
 
     // Test large object operations
-    try putObject(test_client, .{ .bucket_name = bucket_name, .key = "large-file.bin", .data = large_data });
+    try putObject(test_client, .{
+        .bucket_name = bucket_name,
+        .key = "large-file.bin",
+        .data = large_data,
+    });
 
     const retrieved = try getObject(test_client, .{ .bucket_name = bucket_name, .key = "large-file.bin" });
     defer allocator.free(retrieved);
@@ -176,7 +186,11 @@ test "put invalid keys" {
     for (invalid_keys) |key| {
         try std.testing.expectError(
             error.InvalidObjectKey,
-            putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = "test data" }),
+            putObject(test_client, .{
+                .bucket_name = bucket_name,
+                .key = key,
+                .data = "test data",
+            }),
         );
     }
 }
@@ -206,9 +220,16 @@ test "put valid keys" {
 
     for (valid_keys) |key| {
         const test_data = "Test data";
-        try putObject(test_client, .{ .bucket_name = bucket_name, .key = key, .data = test_data });
+        try putObject(test_client, .{
+            .bucket_name = bucket_name,
+            .key = key,
+            .data = test_data,
+        });
 
-        const retrieved = try getObject(test_client, .{ .bucket_name = bucket_name, .key = key });
+        const retrieved = try getObject(
+            test_client,
+            .{ .bucket_name = bucket_name, .key = key },
+        );
         defer allocator.free(retrieved);
 
         try std.testing.expectEqualStrings(test_data, retrieved);
@@ -228,8 +249,8 @@ test "After All - Put Object" {
     defer test_client.deinit();
 
     const buckets_name: [3][]const u8 = .{
-        "large-data-test",            "object-invalid-name-bucket",
-        "object-invalid-name-bucket",
+        "large-data-test",          "object-invalid-name-bucket",
+        "object-valid-name-bucket",
     };
     var threaded: std.Io.Threaded = .init(
         allocator,
@@ -239,7 +260,7 @@ test "After All - Put Object" {
     var group: std.Io.Group = .init;
     const io_threaded = threaded.io();
 
-    const test_objects = [_]struct { bucket_name: []const u8,  key: []const u8 }{
+    const test_objects = [_]struct { bucket_name: []const u8, key: []const u8 }{
         .{ .bucket_name = "large-data-test", .key = "large-file.bin" },
         .{ .bucket_name = "object-valid-name-bucket", .key = "valid/key.txt" },
         .{ .bucket_name = "object-valid-name-bucket", .key = "path/to/object.json" },
@@ -247,7 +268,7 @@ test "After All - Put Object" {
     };
 
     for (test_objects) |obj| {
-       try group.concurrent(
+        try group.concurrent(
             io_threaded,
             struct {
                 fn deleteObjectFn(client: *S3Client, bucket_name: []const u8, key: []const u8) !void {
@@ -257,6 +278,8 @@ test "After All - Put Object" {
             .{ test_client, obj.bucket_name, obj.key },
         );
     }
+
+    try group.await(io_threaded);
 
     // Clean up
     for (buckets_name) |name| {
@@ -270,4 +293,6 @@ test "After All - Put Object" {
             .{ test_client, name },
         );
     }
+
+    try group.await(io_threaded);
 }
