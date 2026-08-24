@@ -164,7 +164,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = object_imports,
     });
-   
+
     const object_uploader_module = b.createModule(.{
         .root_source_file = b.path("src/s3/object/object_uploader.zig"),
         .target = target,
@@ -178,14 +178,14 @@ pub fn build(b: *std.Build) void {
         .{ .module = xml_module, .filters = &.{"xml"} },
         .{ .module = signer_module, .filters = &.{"signer"} },
         .{ .module = client_module, .filters = &.{"Client"} },
-        .{ .module = create_bucket_module, .filters = &.{"bucket"} },
-        .{ .module = delete_bucket_module, .filters = &.{"delete"} },
-        .{ .module = list_buckets_module, .filters = &.{"bucket"} },
-        .{ .module = get_object_module, .filters = &.{"object"} },
-        .{ .module = list_objects_module, .filters = &.{"list object"} },
-        .{ .module = put_object_module, .filters = &.{"pub object"} },
-        .{ .module = delete_object_module, .filters = &.{"delete object"} },
-        .{ .module = object_uploader_module, .filters = &.{"object"} },
+        .{ .module = create_bucket_module, .filters = &.{"create_bucket"} },
+        .{ .module = delete_bucket_module, .filters = &.{"delete_bucket"} },
+        .{ .module = list_buckets_module, .filters = &.{"list_buckets"} },
+        .{ .module = get_object_module, .filters = &.{"get_object"} },
+        .{ .module = list_objects_module, .filters = &.{"list_objects"} },
+        .{ .module = put_object_module, .filters = &.{"put_object"} },
+        .{ .module = delete_object_module, .filters = &.{"delete_object"} },
+        .{ .module = object_uploader_module, .filters = &.{"object_uploader"} },
     };
     const test_runner = b.path("test_runner.zig");
     const test_step = b.step("test", "Run library tests");

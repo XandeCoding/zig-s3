@@ -101,7 +101,7 @@ test "Before All - Delete Object" {
     }
 }
 
-test "delete objects list" {
+test "delete object list" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -121,7 +121,7 @@ test "delete objects list" {
     }
 }
 
-test "After All - Delete Objects" {
+test "After All - Delete Object" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 

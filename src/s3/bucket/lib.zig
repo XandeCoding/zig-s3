@@ -11,5 +11,3 @@ pub const listBuckets = listBucketsOps.listBuckets;
 pub const listBucketsOptions = listBucketsOps.ListBucketsOptions;
 
 pub const BucketInfo = listBucketsOps.BucketInfo;
-
-

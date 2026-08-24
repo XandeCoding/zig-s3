@@ -17,4 +17,3 @@ pub const DeleteObjectOptions = deleteObjectOps.deleteObjectOptions;
 
 const objectUploaderOps = @import("object_uploader.zig");
 pub const ObjectUploader = objectUploaderOps.ObjectUploader;
-
