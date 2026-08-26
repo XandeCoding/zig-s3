@@ -97,29 +97,80 @@ pub fn build(b: *std.Build) void {
     client_module.addImport("../common/errors.zig", errors_module);
 
     // Bucket
+    const bucket_imports: []const std.Build.Module.Import = &.{
+        .{ .name = "../client/implementation.zig", .module = client_module },
+        .{ .name = "../common/xml.zig", .module = xml_module },
+        .{ .name = "../common/validators.zig", .module = validators_module },
+        .{ .name = "../common/errors.zig", .module = errors_module },
+    };
+
     const bucket_module = b.createModule(.{
-        .root_source_file = b.path("src/s3/bucket/operations.zig"),
+        .root_source_file = b.path("src/s3/bucket/lib.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = bucket_imports,
     });
-    bucket_module.addImport("../client/implementation.zig", client_module);
-    bucket_module.addImport("../common/xml.zig", xml_module);
-    bucket_module.addImport("../common/validators.zig", validators_module);
-    bucket_module.addImport("../common/errors.zig", errors_module);
+
+    const create_bucket_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/bucket/create_bucket.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = bucket_imports,
+    });
+    const delete_bucket_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/bucket/delete_bucket.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = bucket_imports,
+    });
+    const list_buckets_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/bucket/list_buckets.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = bucket_imports,
+    });
 
     // Object
-    const object_module = b.createModule(.{
-        .root_source_file = b.path("src/s3/object/operations.zig"),
+    const object_imports: []const std.Build.Module.Import = &.{
+        .{ .name = "../client/implementation.zig", .module = client_module },
+        .{ .name = "../bucket/lib.zig", .module = bucket_module },
+        .{ .name = "../common/encoding.zig", .module = encoding_module },
+        .{ .name = "../common/xml.zig", .module = xml_module },
+        .{ .name = "../common/validators.zig", .module = validators_module },
+        .{ .name = "../common/errors.zig", .module = errors_module },
+    };
+
+    const get_object_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/get_object.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = object_imports,
     });
-    object_module.addImport("../client/implementation.zig", client_module);
-    object_module.addImport("../bucket/operations.zig", bucket_module);
-    object_module.addImport("../common/encoding.zig", encoding_module);
-    object_module.addImport("../common/xml.zig", xml_module);
-    object_module.addImport("../common/validators.zig", validators_module);
-    object_module.addImport("../common/errors.zig", errors_module);
+    const list_objects_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/list_objects.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = object_imports,
+    });
+    const put_object_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/put_object.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = object_imports,
+    });
+    const delete_object_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/delete_object.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = object_imports,
+    });
 
+    const object_uploader_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/object_uploader.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = object_imports,
+    });
     const modules_data = [_]struct { module: *std.Build.Module, filters: []const []const u8 }{
         .{ .module = encoding_module, .filters = &.{"encoding"} },
         .{ .module = time_module, .filters = &.{"time"} },
@@ -127,8 +178,14 @@ pub fn build(b: *std.Build) void {
         .{ .module = xml_module, .filters = &.{"xml"} },
         .{ .module = signer_module, .filters = &.{"signer"} },
         .{ .module = client_module, .filters = &.{"Client"} },
-        .{ .module = bucket_module, .filters = &.{"bucket"} },
-        .{ .module = object_module, .filters = &.{"object"} },
+        .{ .module = create_bucket_module, .filters = &.{"create_bucket"} },
+        .{ .module = delete_bucket_module, .filters = &.{"delete_bucket"} },
+        .{ .module = list_buckets_module, .filters = &.{"list_buckets"} },
+        .{ .module = get_object_module, .filters = &.{"get_object"} },
+        .{ .module = list_objects_module, .filters = &.{"list_objects"} },
+        .{ .module = put_object_module, .filters = &.{"put_object"} },
+        .{ .module = delete_object_module, .filters = &.{"delete_object"} },
+        .{ .module = object_uploader_module, .filters = &.{"object_uploader"} },
     };
     const test_runner = b.path("test_runner.zig");
     const test_step = b.step("test", "Run library tests");

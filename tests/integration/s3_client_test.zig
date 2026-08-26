@@ -94,12 +94,12 @@ test "create simple bucket" {
 
     // Create bucket
     std.debug.print("Creating bucket '{s}'...\n", .{bucket_name});
-    try client.createBucket(bucket_name);
+    try client.createBucket(.{ .bucket_name = bucket_name });
     std.debug.print("Bucket '{s}' created successfully\n", .{bucket_name});
 
     // Verify the bucket exists by listing buckets
     std.debug.print("Listing buckets to verify creation...\n", .{});
-    const buckets = try client.listBuckets();
+    const buckets = try client.listBuckets(.{});
     defer {
         for (buckets) |bucket| {
             allocator.free(bucket.name);
@@ -121,7 +121,7 @@ test "create simple bucket" {
 
     // Clean up by deleting the bucket
     std.debug.print("Deleting bucket '{s}'...\n", .{bucket_name});
-    try client.deleteBucket(bucket_name);
+    try client.deleteBucket(.{ .bucket_name = bucket_name });
     std.debug.print("Bucket '{s}' deleted successfully\n", .{bucket_name});
 }
 
@@ -140,8 +140,8 @@ test "upload simple file to test-bucket" {
 
     // Create bucket just to insure the upload will be successfull
     std.debug.print("Creating bucket '{s}'...\n", .{bucket_name});
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(.{ .bucket_name = bucket_name });
+    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
     // Create uploader and upload string
     var uploader = client.uploader();
@@ -149,12 +149,12 @@ test "upload simple file to test-bucket" {
         std.debug.print("Failed to upload file: {any}\n", .{err});
         return err;
     };
-    defer _ = client.deleteObject(bucket_name, file_key) catch {};
+    defer _ = client.deleteObject(.{ .bucket_name = bucket_name, .key = file_key }) catch {};
 
     std.debug.print("Successfully uploaded file '{s}' to bucket '{s}'\n", .{ file_key, bucket_name });
 
     // Verify the upload by downloading the content
-    const downloaded = client.getObject(bucket_name, file_key) catch |err| {
+    const downloaded = client.getObject(.{ .bucket_name = bucket_name, .key = file_key }) catch |err| {
         std.debug.print("Failed to download file: {any}\n", .{err});
         return err;
     };
@@ -174,11 +174,11 @@ test "full client lifecycle" {
 
     // Create test bucket
     const bucket_name = "integration-test-bucket";
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(.{ .bucket_name = bucket_name });
+    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
     // List buckets and verify our bucket exists
-    const buckets = try client.listBuckets();
+    const buckets = try client.listBuckets(.{});
     defer {
         for (buckets) |bucket| {
             allocator.free(bucket.name);
@@ -236,7 +236,7 @@ test "full client lifecycle" {
 
         std.debug.print("test file upload succesfull...\n", .{});
         // List objects and verify
-        const objects = try client.listObjects(bucket_name, .{});
+        const objects = try client.listObjects(.{ .bucket_name = bucket_name });
         defer {
             for (objects) |object| {
                 allocator.free(object.key);
@@ -249,12 +249,15 @@ test "full client lifecycle" {
         try testing.expectEqual(3, objects.len);
 
         // Download and verify content
-        const hello_content = try client.getObject(bucket_name, "hello.txt");
+        const hello_content = try client.getObject(.{
+            .bucket_name = bucket_name,
+            .key = "hello.txt",
+        });
         defer allocator.free(hello_content);
         try testing.expectEqualStrings("Hello, Integration Tests!", hello_content);
         std.debug.print("hello downloaded ...\n", .{});
 
-        const config_content = try client.getObject(bucket_name, "config.json");
+        const config_content = try client.getObject(.{ .bucket_name = bucket_name, .key = "config.json" });
         std.debug.print("config content {s}...\n", .{config_content});
         defer allocator.free(config_content);
 
@@ -271,13 +274,16 @@ test "full client lifecycle" {
         try testing.expectEqualStrings("1.0.0", parsed.value.version);
 
         // Test object deletion
-        try client.deleteObject(bucket_name, "hello.txt");
-        try client.deleteObject(bucket_name, "config.json");
-        try client.deleteObject(bucket_name, "files/test.dat");
+        try client.deleteObject(.{
+            .bucket_name = bucket_name,
+            .key = "hello.txt",
+        });
+        try client.deleteObject(.{ .bucket_name = bucket_name, .key = "config.json" });
+        try client.deleteObject(.{ .bucket_name = bucket_name, .key = "files/test.dat" });
 
         std.debug.print("Objects deleted...\n", .{});
         // Verify objects are gone
-        const remaining_objects = try client.listObjects(bucket_name, .{});
+        const remaining_objects = try client.listObjects(.{ .bucket_name = bucket_name });
         defer {
             for (remaining_objects) |object| {
                 allocator.free(object.key);
@@ -301,34 +307,41 @@ test "error handling" {
     // Test non-existent bucket
     try testing.expectError(
         error.ObjectNotFound,
-        client.getObject("nonexistent-bucket", "test.txt"),
+        client.getObject(.{
+            .bucket_name = "nonexistent-bucket",
+            .key = "test.txt",
+        }),
     );
 
     // Test non-existent object
     const bucket_name = "error-test-bucket";
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(.{ .bucket_name = bucket_name });
+    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
     try testing.expectError(
         error.ObjectNotFound,
-        client.getObject(bucket_name, "nonexistent.txt"),
+        client.getObject(.{ .bucket_name = bucket_name, .key = "nonexistent.txt" }),
     );
 
     // Test invalid bucket names
     try testing.expectError(
         error.InvalidBucketName,
-        client.createBucket(""),
+        client.createBucket(.{ .bucket_name = "" }),
     );
 
     try testing.expectError(
         error.InvalidBucketName,
-        client.createBucket("invalid..bucket"),
+        client.createBucket(.{ .bucket_name = "invalid..bucket" }),
     );
 
     // Test invalid object keys
     try testing.expectError(
         error.InvalidObjectKey,
-        client.putObject(bucket_name, "", "test"),
+        client.putObject(.{
+            .bucket_name = bucket_name,
+            .key = "",
+            .data = "test",
+        }),
     );
 }
 
@@ -341,8 +354,8 @@ test "pagination and prefixes" {
     defer client.deinit();
 
     const bucket_name = "pagination-test-bucket";
-    client.createBucket(bucket_name) catch {};
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    client.createBucket(.{ .bucket_name = bucket_name }) catch {};
+    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
     std.debug.print("Bucket created: {s}...\n", .{bucket_name});
 
     var uploader = client.uploader();
@@ -387,7 +400,8 @@ test "pagination and prefixes" {
         var max_attempts: u16 = 10;
         while (max_attempts > 0) {
             max_attempts = max_attempts - 1;
-            const page = try client.listObjects(bucket_name, .{
+            const page = try client.listObjects(.{
+                .bucket_name = bucket_name,
                 .max_keys = page_size,
                 .start_after = all_objects.getLastOrNull(),
             });
@@ -412,23 +426,43 @@ test "pagination and prefixes" {
             if (page.len < page_size) break;
         }
 
-        std.debug.print("Object appended, total objects: {d}, all objects: {d}...\n", .{ total_objects, all_objects.items.len });
+        std.debug.print(
+            "Object appended, total objects: {d}, all objects: {d}...\n",
+            .{ total_objects, all_objects.items.len },
+        );
         try testing.expectEqual(total_objects, all_objects.items.len);
     }
 
     std.debug.print("Object appended ...\n", .{});
     // Test listing with prefix
     for (prefixes) |prefix| {
-        const objects = try client.listObjects(bucket_name, .{
+        const objects = try client.listObjects(.{
+            .bucket_name = bucket_name,
             .prefix = prefix,
         });
         defer {
-            var delete_list = std.ArrayList(s3.DeleteObjectParam).empty;
-            defer delete_list.deinit(allocator);
-            for (objects) |item| {
-                _ = delete_list.append(allocator, .{ .key = item.key }) catch {};
+            var threaded: std.Io.Threaded = .init(
+                allocator,
+                .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
+            );
+            defer threaded.deinit();
+            var group: std.Io.Group = .init;
+            const io_threaded = threaded.io();
+
+            // Clean up
+            for (objects) |obj| {
+                _ = group.concurrent(
+                    io_threaded,
+                    struct {
+                        fn deleteObjectFn(delete_client: *s3.S3Client, delete_bucket_name: []const u8, key: []const u8) !void {
+                            _ = delete_client.deleteObject(.{ .bucket_name = delete_bucket_name, .key = key }) catch {};
+                        }
+                    }.deleteObjectFn,
+                    .{ &client, bucket_name, obj.key },
+                ) catch {};
             }
-            _ = client.deleteObjectList(bucket_name, delete_list.items) catch {};
+
+            _ = group.await(io_threaded) catch {};
 
             for (objects) |object| {
                 allocator.free(object.key);
@@ -457,8 +491,8 @@ test "file upload and download" {
 
     // Setup test bucket
     const bucket_name = "file-upload-test-bucket";
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(.{ .bucket_name = bucket_name });
+    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
     var uploader = client.uploader();
 
@@ -468,7 +502,7 @@ test "file upload and download" {
         try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/sample.txt");
 
         // Verify uploaded content
-        const downloaded = try client.getObject(bucket_name, s3_key);
+        const downloaded = try client.getObject(.{ .bucket_name = bucket_name, .key = s3_key });
         defer allocator.free(downloaded);
         std.debug.print("\nDownloaded: {s} ...\n", .{downloaded});
 
@@ -491,7 +525,7 @@ test "file upload and download" {
         try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/config.json");
 
         // Verify uploaded content
-        const downloaded = try client.getObject(bucket_name, s3_key);
+        const downloaded = try client.getObject(.{ .bucket_name = bucket_name, .key = s3_key });
         defer allocator.free(downloaded);
 
         // Read original file for comparison
@@ -520,7 +554,7 @@ test "file upload and download" {
 
     // Test file metadata and listing
     {
-        const objects = try client.listObjects(bucket_name, .{});
+        const objects = try client.listObjects(.{ .bucket_name = bucket_name });
         defer {
             for (objects) |object| {
                 allocator.free(object.key);
@@ -544,11 +578,11 @@ test "file upload and download" {
     }
 
     // Cleanup: Delete the uploaded files
-    try client.deleteObject(bucket_name, "text/sample.txt");
-    try client.deleteObject(bucket_name, "json/config.json");
+    try client.deleteObject(.{ .bucket_name = bucket_name, .key = "text/sample.txt" });
+    try client.deleteObject(.{ .bucket_name = bucket_name, .key = "json/config.json" });
 
     // Verify deletion
-    const remaining = try client.listObjects(bucket_name, .{});
+    const remaining = try client.listObjects(.{ .bucket_name = bucket_name });
     defer {
         for (remaining) |object| {
             allocator.free(object.key);
