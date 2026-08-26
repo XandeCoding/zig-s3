@@ -45,10 +45,10 @@ S3-compatible services.
 
 - [x] Remove dotenv
 - [x] Improve tests perfomance 
+- [x] Break each object or bucket operation in a module
 - [ ] Streaming files
 - [ ] Add all S3 operation options to functions
 - [ ] Use UTC at creating amz credentials
-- [ ] Break each object or bucket operation in a module
 - [ ] Run tests concurrently
 
 

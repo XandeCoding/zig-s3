@@ -18,8 +18,9 @@ pub const GetObjectOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the bucket containing the object
-///   - key: Object key (path) in the bucket
+///   - options: Struct with get options
+///     - bucket_name: Name of the bucket containing the object
+///     - key: Object key (path) in the bucket
 ///
 /// Returns: Object content as a slice. Caller owns the memory.
 ///

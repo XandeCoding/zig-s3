@@ -24,9 +24,11 @@ pub const PutObjectOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the target bucket
-///   - key: Object key (path) in the bucket
-///   - data: Object content to upload
+///   - options: Optional listing parameters (prefix, pagination)
+///     - bucket_name: Name of the target bucket
+///     - key: Object key (path) in the bucket
+///     - data: Object content to upload
+///     - object_lock: not implemented yet
 ///
 /// Errors:
 ///   - InvalidObjectKey: Invalid object key

@@ -20,8 +20,9 @@ pub const DeleteObjectOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the bucket containing the object
-///   - key: Object key (path) to delete
+///   - options: Struct with delete options
+///     - bucket_name: Name of the bucket containing the object
+///     - key: Object key (path) to delete
 ///
 /// Errors:
 ///   - InvalidResponse: If deletion fails

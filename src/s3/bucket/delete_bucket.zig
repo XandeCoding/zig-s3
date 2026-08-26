@@ -21,7 +21,8 @@ pub const DeleteBucketOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the bucket to delete
+///   - options: Struct with delete options
+///     - bucket_name: Name of the bucket to delete
 ///
 /// Errors:
 ///   - InvalidResponse: If bucket deletion fails (e.g., bucket not empty)

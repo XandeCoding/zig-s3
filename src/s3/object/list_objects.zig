@@ -42,8 +42,11 @@ pub const ListObjectsOptions = struct {
 ///
 /// Parameters:
 ///   - self: Pointer to initialized S3Client
-///   - bucket_name: Name of the bucket to list
 ///   - options: Optional listing parameters (prefix, pagination)
+///     - bucket_name: Name of the bucket to list
+///     - prefix: Filter for initial file name
+///     - max_keys: Maximum number of objects to return
+///     - start_after: Used for pagination
 ///
 /// Returns: Slice of ObjectInfo structs. Caller owns the memory.
 ///
