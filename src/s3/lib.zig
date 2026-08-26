@@ -45,7 +45,7 @@ pub const S3Error = errors.S3Error;
 pub const S3Config = client.S3Config;
 
 /// Information about a bucket in S3
-pub const BucketInfo = bucket_lib.bucket_ops.BucketInfo;
+pub const BucketInfo = bucket_lib.BucketInfo;
 
 /// Information about an object in S3
 pub const ObjectInfo = object_lib.ObjectInfo;
@@ -56,8 +56,6 @@ pub const ListObjectsOptions = object_lib.ListObjectsOptions;
 /// Helper struct for uploading different types of content to S3
 pub const ObjectUploader = object_lib.ObjectUploader;
 
-/// Helper to delete a list of Objects
-pub const DeleteObjectParam = object_lib.DeleteObjectParam;
 /// Main client interface that provides S3 operations.
 /// This struct wraps the internal implementation and provides a clean public API.
 pub const S3Client = struct {
@@ -113,7 +111,7 @@ pub const S3Client = struct {
     /// Delete an existing bucket.
     /// See bucket/operations.zig for details.
     pub fn deleteBucket(self: *S3Client, options: bucket_lib.deleteBucketOptions) !void {
-        return bucket_lib.bucket_ops.deleteBucket(self.inner, options);
+        return bucket_lib.deleteBucket(self.inner, options);
     }
 
     /// List all buckets owned by the authenticated user.
@@ -127,7 +125,7 @@ pub const S3Client = struct {
     ///     ConnectionFailed: Network or connection issues
     ///     OutOfMemory: Memory allocation failure
     pub fn listBuckets(self: *S3Client, options: bucket_lib.listBucketsOptions) ![]BucketInfo {
-        return bucket_lib.bucket_ops.listBuckets(self.inner, options);
+        return bucket_lib.listBuckets(self.inner, options);
     }
 
     /// Upload an object to S3.

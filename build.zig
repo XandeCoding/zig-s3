@@ -214,24 +214,24 @@ pub fn build(b: *std.Build) void {
     }
 
     // Integration tests
-    //const integration_test_module = b.createModule(.{
-    //    .root_source_file = b.path("tests/integration/s3_client_test.zig"),
-    //    .target = target,
-    //    .optimize = optimize,
-    //});
-    //const integration_tests = b.addTest(.{
-    //    .root_module = integration_test_module,
-    //    .test_runner = .{ .path = test_runner, .mode = .simple },
-    //    .filters = test_filters,
-    //});
-    //integration_tests.root_module.addImport("s3", s3_module);
+    const integration_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/integration/s3_client_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const integration_tests = b.addTest(.{
+        .root_module = integration_test_module,
+        .test_runner = .{ .path = test_runner, .mode = .simple },
+        .filters = test_filters,
+    });
+    integration_tests.root_module.addImport("s3", s3_module);
 
-    //const run_integration_tests = b.addRunArtifact(integration_tests);
-    //const integration_test_step = b.step("integration-test", "Run integration tests");
-    //integration_test_step.dependOn(&run_integration_tests.step);
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const integration_test_step = b.step("integration-test", "Run integration tests");
+    integration_test_step.dependOn(&run_integration_tests.step);
 
     // Add integration tests to main test step
-    //test_step.dependOn(&run_integration_tests.step);
+    test_step.dependOn(&run_integration_tests.step);
 
     // Add formatting
     const fmt = b.addFmt(.{

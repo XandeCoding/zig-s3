@@ -107,7 +107,7 @@ pub fn main(init: std.process.Init) !void {
     defer client.deinit();
 
     // Create bucket
-    try client.createBucket("my-bucket");
+    try client.createBucket(.{ .bucket_name = "my-bucket" });
 
     // Upload string content
     var uploader = client.uploader();
@@ -132,16 +132,16 @@ const client = try s3.S3Client.init(allocator, .{
 
 ### 🪣 Bucket Operations
 
-- `createBucket(bucket_name: []const u8) !void`
-- `deleteBucket(bucket_name: []const u8) !void`
-- `listBuckets() ![]BucketInfo`
+- `createBucket(struct { bucket_name: []const u8, .object_lock: ?bool }) !void`
+- `deleteBucket(struct { bucket_name: []const u8, expected_bucket_owner: ?[]const u8) !void`
+- `listBuckets(struct { continuation_token: ?[]const u8, max_buckets: ?u16, prefix: ?[]const u8 })`
 
 ### 📦 Object Operations
 
-- `putObject(bucket_name: []const u8, key: []const u8, data: []const u8) !void`
-- `getObject(bucket_name: []const u8, key: []const u8) ![]const u8`
-- `deleteObject(bucket_name: []const u8, key: []const u8) !void`
-- `listObjects(bucket_name: []const u8, options: ListObjectsOptions) ![]ObjectInfo`
+- `deleteObject(struct { bucket_name: []const u8, key: []const u8 }) !void`
+- `getObject(struct { bucket_name: []const u8, key: []const u8 }) ![]const u8`
+- `listObjects(struct { key: []const u8, size: u64, last_modified: []const u8, etag: []const u8 }) ![]ObjectInfo`
+- `putObject(struct { bucket_name: []const u8, key: []const u8, data: []const u8, object_lock: ?bool }) !void`
 
 ### 📤 ObjectUploader
 

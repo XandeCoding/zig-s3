@@ -1,6 +1,6 @@
 const getObjectOps = @import("get_object.zig");
 pub const getObject = getObjectOps.getObject;
-pub const GetObjectOptions = getObjectOps.getObjectOptions;
+pub const GetObjectOptions = getObjectOps.GetObjectOptions;
 
 const listObjectsOps = @import("list_objects.zig");
 pub const listObjects = listObjectsOps.listObjects;
@@ -13,7 +13,7 @@ pub const PutObjectOptions = putObjectOps.PutObjectOptions;
 
 const deleteObjectOps = @import("delete_object.zig");
 pub const deleteObject = deleteObjectOps.deleteObject;
-pub const DeleteObjectOptions = deleteObjectOps.deleteObjectOptions;
+pub const DeleteObjectOptions = deleteObjectOps.DeleteObjectOptions;
 
 const objectUploaderOps = @import("object_uploader.zig");
 pub const ObjectUploader = objectUploaderOps.ObjectUploader;
