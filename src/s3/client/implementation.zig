@@ -232,6 +232,55 @@ pub const S3Client = struct {
 
         return try self.http_client.fetch(options.params);
     }
+
+    // TODO: REFACT TO USE STREAMING IN MEMORY - CREATE HASH AND UPLOAD WITH STREAM TO NOT IMPACT MEMORY
+    // TODO: VALIDAR O TIPO DE MÉTODO
+    pub fn requestWriterStream(
+        self: *S3Client,
+        method: http.Method,
+        uri: Uri,
+        payload: []const u8,
+        response_writer: ?*std.Io.Writer,
+    ) !HttpClient.FetchResult {
+        const options = try RequestOptions.init(
+            self.allocator,
+            self.http_client.io,
+            self.config,
+            method,
+            uri,
+            response_writer,
+            payload,
+        );
+        defer options.deinit(self.allocator);
+
+        var req = try http.Client.request(self.http_client, method, uri, .{
+            .headers = options.params.headers,
+            .extra_headers = options.params.extra_headers,
+        });
+        defer req.deinit();
+
+        req.transfer_encoding = .chunked;
+        // TODO: VALIDAR TAMANHO DO BUFFER
+        var buffer: [1024]u8 = undefined;
+        var body = req.sendBodyUnflushed(&buffer);
+
+        var cursor = 0;
+
+        while (cursor < payload.len) {
+            cursor += try body.writer.write(payload[cursor .. cursor + 128]);
+        }
+
+        try body.end();
+        try req.connection.?.flush();
+        const redirect_buffer: [1024]u8 = undefined;
+
+        // TODO: HANDLE NOT REDIRECT?
+        var response = try req.receiveHead(&redirect_buffer);
+        // TODO: HANDLE ERROR
+        _ = try response.reader.streamRemaining(response_writer);
+
+        return .{ .status = response.head.status };
+    }
 };
 
 test "S3Client request signing" {
