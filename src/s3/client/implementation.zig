@@ -33,7 +33,9 @@ pub const RequestOptions = struct {
     params: FetchOptions,
     content_hash: []const u8,
     amz_date: []const u8,
+    headers: std.StringHashMap([]const u8),
     auth_header: []const u8,
+    extra_headers: []const http.Header,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -67,13 +69,12 @@ pub const RequestOptions = struct {
             .service = "s3",
         };
 
-        var headers = try signer.createSignHeaders(
+        const headers = try signer.createSignHeaders(
             allocator,
             uri_host,
             content_hash,
             amz_date,
         );
-        defer headers.deinit();
 
         const params = signer.SigningParams{
             .method = @tagName(method),
@@ -86,6 +87,13 @@ pub const RequestOptions = struct {
 
         // Generate authorization header
         const auth_header = try signer.signRequest(allocator, credentials, params);
+        const extra_headers = try allocator.create([4]http.Header);
+        extra_headers.* = .{
+            .{ .name = "Accept", .value = "application/xml" },
+            .{ .name = "x-amz-content-sha256", .value = content_hash },
+            .{ .name = "x-amz-date", .value = amz_date },
+            .{ .name = "Authorization", .value = auth_header },
+        }; 
 
         const options = FetchOptions{
             .location = .{
@@ -98,19 +106,16 @@ pub const RequestOptions = struct {
                 .host = .{ .override = uri_host },
                 .content_type = .{ .override = "application/xml" },
             },
-            .extra_headers = &[_]http.Header{
-                .{ .name = "Accept", .value = "application/xml" },
-                .{ .name = "x-amz-content-sha256", .value = content_hash },
-                .{ .name = "x-amz-date", .value = amz_date },
-                .{ .name = "Authorization", .value = auth_header },
-            },
+            .extra_headers = extra_headers,
         };
 
         self.* = .{
             .params = options,
             .content_hash = content_hash,
             .amz_date = amz_date,
+            .headers = headers,
             .auth_header = auth_header,
+            .extra_headers = extra_headers,
         };
 
         return self;
@@ -119,7 +124,10 @@ pub const RequestOptions = struct {
     pub fn deinit(self: *RequestOptions, allocator: std.mem.Allocator) void {
         allocator.free(self.content_hash);
         allocator.free(self.amz_date);
+        // TODO: CHECAR SE NECESSARIO
+        self.headers.deinit();
         allocator.free(self.auth_header);
+        allocator.free(self.extra_headers);
         allocator.destroy(self);
     }
 
@@ -240,7 +248,7 @@ pub const S3Client = struct {
         method: http.Method,
         uri: Uri,
         payload: []const u8,
-        response_writer: ?*std.Io.Writer,
+        response_writer: *std.Io.Writer,
     ) !HttpClient.FetchResult {
         const options = try RequestOptions.init(
             self.allocator,
@@ -253,7 +261,7 @@ pub const S3Client = struct {
         );
         defer options.deinit(self.allocator);
 
-        var req = try http.Client.request(self.http_client, method, uri, .{
+        var req = try self.http_client.request(method, uri, .{
             .headers = options.params.headers,
             .extra_headers = options.params.extra_headers,
         });
@@ -261,23 +269,24 @@ pub const S3Client = struct {
 
         req.transfer_encoding = .chunked;
         // TODO: VALIDAR TAMANHO DO BUFFER
-        var buffer: [1024]u8 = undefined;
-        var body = req.sendBodyUnflushed(&buffer);
+        var buffer: [8096]u8 = undefined;
+        var body = try req.sendBodyUnflushed(&buffer);
+        //try body.writer.writeAll(payload);
 
-        var cursor = 0;
-
-        while (cursor < payload.len) {
-            cursor += try body.writer.write(payload[cursor .. cursor + 128]);
-        }
+        //var cursor: usize = 0;
+        //while (cursor < payload.len) {
+        //    cursor += try body.writer.write(payload[cursor .. cursor + 128]);
+        //}
 
         try body.end();
         try req.connection.?.flush();
-        const redirect_buffer: [1024]u8 = undefined;
 
         // TODO: HANDLE NOT REDIRECT?
-        var response = try req.receiveHead(&redirect_buffer);
-        // TODO: HANDLE ERROR
-        _ = try response.reader.streamRemaining(response_writer);
+        var response = try req.receiveHead(&.{});
+
+        var transfer_buffer: [64]u8 = undefined;
+        const reader = response.reader(&transfer_buffer);
+        _ = try reader.streamRemaining(response_writer);
 
         return .{ .status = response.head.status };
     }
@@ -356,6 +365,29 @@ test "S3Client request with body" {
     const uri = try Uri.parse("https://example.s3.amazonaws.com/test.txt");
     const body = "Hello, S3!";
     const req = try client.request(.PUT, uri, null, body);
+    try std.testing.expectEqual(req.status, .forbidden);
+}
+
+test "S3Client request writer stream" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    const config = S3Config{
+        .access_key_id = "test-key",
+        .secret_access_key = "test-secret",
+        .region = "us-east-1",
+        .endpoint = "https://s3.us-east-1.amazonaws.com",
+    };
+
+    var client = try S3Client.init(allocator, io, config);
+    defer client.deinit();
+
+    var buffer: [1024]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&buffer);
+
+    const uri = try Uri.parse("https://example.s3.amazonaws.com/test.txt");
+    const body = "Hello, S3!";
+    const req = try client.requestWriterStream(.PUT, uri, body, &out);
     try std.testing.expectEqual(req.status, .forbidden);
 }
 

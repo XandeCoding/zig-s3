@@ -47,7 +47,12 @@ pub fn putObject(self: *S3Client, options: PutObjectOptions) !void {
     );
     defer self.allocator.free(uri_str);
 
-    const req = try self.request(.PUT, try Uri.parse(uri_str), null, options.data);
+    var buffer: [8096]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&buffer);
+
+    const req = try self.requestWriterStream(
+        .PUT, try Uri.parse(uri_str), options.data, &out,
+    );
 
     if (req.status == .bad_request) {
         return S3Error.InvalidObjectKey;
