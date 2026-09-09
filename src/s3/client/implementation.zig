@@ -93,8 +93,9 @@ pub const RequestOptions = struct {
             .{ .name = "x-amz-content-sha256", .value = content_hash },
             .{ .name = "x-amz-date", .value = amz_date },
             .{ .name = "Authorization", .value = auth_header },
-        }; 
+        };
 
+        // TODO: CONTENT-LENGHT HEADER QUEBRA OUTRAS CHAMADAS?
         const options = FetchOptions{
             .location = .{
                 .uri = uri,
@@ -247,8 +248,8 @@ pub const S3Client = struct {
         self: *S3Client,
         method: http.Method,
         uri: Uri,
-        payload: []const u8,
         response_writer: *std.Io.Writer,
+        payload: []const u8,
     ) !HttpClient.FetchResult {
         const options = try RequestOptions.init(
             self.allocator,

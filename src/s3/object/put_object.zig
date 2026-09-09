@@ -47,11 +47,11 @@ pub fn putObject(self: *S3Client, options: PutObjectOptions) !void {
     );
     defer self.allocator.free(uri_str);
 
-    var buffer: [8096]u8 = undefined;
-    var out: std.Io.Writer = .fixed(&buffer);
-
-    const req = try self.requestWriterStream(
-        .PUT, try Uri.parse(uri_str), options.data, &out,
+    const req = try self.request(
+        .PUT,
+        try Uri.parse(uri_str),
+        null,
+        options.data,
     );
 
     if (req.status == .bad_request) {
