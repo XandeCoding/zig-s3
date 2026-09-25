@@ -29,6 +29,16 @@ pub const S3Config = struct {
     endpoint: []const u8,
 };
 
+pub const HeadersResponse = struct {
+    content_type: ?[]const u8 = null,
+    e_tag: ?[]const u8 = null,
+};
+
+pub const Response = struct {
+    status: http.Status,
+    headers: HeadersResponse,
+};
+
 pub const RequestOptions = struct {
     params: FetchOptions,
     content_hash: []const u8,
@@ -101,6 +111,7 @@ pub const RequestOptions = struct {
                 .uri = uri,
             },
             .method = method,
+            // TODO: CHECK IF MAKES SENSE MAINTAINS IT HERE
             .response_writer = writer,
             .payload = normalizePayload(method, payload),
             .headers = .{
@@ -125,7 +136,6 @@ pub const RequestOptions = struct {
     pub fn deinit(self: *RequestOptions, allocator: std.mem.Allocator) void {
         allocator.free(self.content_hash);
         allocator.free(self.amz_date);
-        // TODO: CHECAR SE NECESSARIO
         self.headers.deinit();
         allocator.free(self.auth_header);
         allocator.free(self.extra_headers);
@@ -244,52 +254,74 @@ pub const S3Client = struct {
 
     // TODO: REFACT TO USE STREAMING IN MEMORY - CREATE HASH AND UPLOAD WITH STREAM TO NOT IMPACT MEMORY
     // TODO: VALIDAR O TIPO DE MÉTODO
-    pub fn requestWriterStream(
+    pub fn requestWriter(
         self: *S3Client,
-        method: http.Method,
-        uri: Uri,
-        response_writer: *std.Io.Writer,
-        payload: []const u8,
-    ) !HttpClient.FetchResult {
+        params: struct {
+            method: http.Method,
+            uri: Uri,
+            response_body_writer: ?*std.Io.Writer,
+            payload: ?[]const u8,
+        }
+    ) !Response {
         const options = try RequestOptions.init(
             self.allocator,
             self.http_client.io,
             self.config,
-            method,
-            uri,
-            response_writer,
-            payload,
+            params.method,
+            params.uri,
+            params.response_body_writer,
+            params.payload,
         );
         defer options.deinit(self.allocator);
 
-        var req = try self.http_client.request(method, uri, .{
+        var req = try self.http_client.request(params.method, params.uri, .{
             .headers = options.params.headers,
             .extra_headers = options.params.extra_headers,
         });
         defer req.deinit();
 
-        req.transfer_encoding = .chunked;
-        // TODO: VALIDAR TAMANHO DO BUFFER
-        var buffer: [8096]u8 = undefined;
-        var body = try req.sendBodyUnflushed(&buffer);
-        //try body.writer.writeAll(payload);
+        if (params.payload) |payload| {
+            req.transfer_encoding = .{ .content_length = payload.len };
+            // TODO: VALIDAR BUFFER
+            var buffer: [8096]u8 = undefined;
+            var body = try req.sendBodyUnflushed(&buffer);
 
-        //var cursor: usize = 0;
-        //while (cursor < payload.len) {
-        //    cursor += try body.writer.write(payload[cursor .. cursor + 128]);
-        //}
+            try body.writer.writeAll(payload);
+            try body.end();
+            try req.connection.?.flush();
+        } else {
+            try req.sendBodiless();
+        }
 
-        try body.end();
-        try req.connection.?.flush();
-
-        // TODO: HANDLE NOT REDIRECT?
+        // TODO: HANDLE REDIRECT?
         var response = try req.receiveHead(&.{});
 
+        var header_iterator = response.head.iterateHeaders();
+        var header_data = header_iterator.next();
+        var header_response: HeadersResponse = .{};
+
+        while(header_data) | header | {
+            std.debug.print("\nName: {s} - value: {s}\n", .{ header.name, header.value });
+
+            if (std.ascii.eqlIgnoreCase(header.name, "content-type")) {
+               header_response.content_type = try std.fmt.allocPrint(self.allocator, "{s}", .{ header.value });
+            }
+            else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
+               header_response.e_tag = try std.fmt.allocPrint(self.allocator, "{s}", .{ header.value });
+            }
+            header_data = header_iterator.next();
+        }
+
+        // TODO: CHECAR BUFFER
         var transfer_buffer: [64]u8 = undefined;
         const reader = response.reader(&transfer_buffer);
-        _ = try reader.streamRemaining(response_writer);
+        // TODO: COLOCAR TRATATIVAS
 
-        return .{ .status = response.head.status };
+        if (params.response_body_writer != null) { 
+            _ = try reader.streamRemaining(params.response_body_writer.?);
+        }
+
+        return .{ .status = response.head.status, .headers = header_response };
     }
 };
 
@@ -388,8 +420,18 @@ test "S3Client request writer stream" {
 
     const uri = try Uri.parse("https://example.s3.amazonaws.com/test.txt");
     const body = "Hello, S3!";
-    const req = try client.requestWriterStream(.PUT, uri, body, &out);
+
+    const req = try client.requestWriter(.{
+        .method = .PUT, 
+        .uri = uri, 
+        .payload = body, 
+        .response_body_writer = &out,
+    });
     try std.testing.expectEqual(req.status, .forbidden);
+    try std.testing.expectEqualStrings(req.headers.content_type.?, "application/xml");
+    try std.testing.expect(req.headers.e_tag == null);
+
+    defer allocator.free(req.headers.content_type.?);
 }
 
 test "S3Client error handling" {

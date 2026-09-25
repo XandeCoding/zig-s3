@@ -1,6 +1,4 @@
 const std = @import("std");
-const client_impl = @import("../client/implementation.zig");
-const S3Client = client_impl.S3Client; 
 
 const URLQueryParam = struct {
     name: []const u8,
@@ -9,21 +7,22 @@ const URLQueryParam = struct {
 
 // TODO: TRATAR ANOTHER TYPES OF HOST
 pub fn create_url(
-    client: *S3Client, 
+    allocator: std.mem.Allocator, 
+    endpoint: []const u8,
     path_params: [][]const u8, 
-    query_params: []const URLQueryParam,
+    query_params: ?[]const URLQueryParam,
 ) ![]const u8 {
-    const out: std.Io.Writer.Allocating = .allocating(client.allocator);
+    const out: std.Io.Writer.Allocating = .allocating(allocator);
     defer out.deinit();
 
-    out.writer.writeAll(client.config.endpoint);
+    out.writer.writeAll(endpoint);
 
     for (path_params) |path| {
         out.writer.writeAll("/");
         out.writer.writeAll(path);
     }
 
-    if (query_params.len == 0) return out.written();
+    if (query_params == null) return out.written();
 
     out.writer.writeAll("?");
     out.writer.writeAll(query_params[0]);
@@ -34,4 +33,12 @@ pub fn create_url(
     }
     
     return out.written();
+}
+
+test "Create basic URL" {
+    const allocator = std.testing.allocator;
+    std.testing.expectEqualStrings(
+        create_url(allocator, "localhost:9000", "bucket", null),
+        "localhost:9000/bucket",
+    );
 }
