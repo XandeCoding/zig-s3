@@ -11,7 +11,7 @@ const AbortMultipartObjectOptions = struct {
     upload_id: []const u8,
 };
 
-fn abortMultipartUpload(self: *S3Client, options: AbortMultipartObjectOptions) !void {
+pub fn abortMultipartUpload(self: *S3Client, options: AbortMultipartObjectOptions) !void {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploadId={s}",

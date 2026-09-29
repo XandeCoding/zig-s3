@@ -11,17 +11,14 @@ const CreateMultipartObjectOptions = struct {
     key: []const u8,
 };
 
-fn createMultipartUpload(
-    self: *S3Client, 
-    options: CreateMultipartObjectOptions
-) ![]const u8 {
+pub fn createMultipartUpload(self: *S3Client, options: CreateMultipartObjectOptions) ![]const u8 {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploads=",
         .{ self.config.endpoint, options.bucket_name, options.key },
     );
     defer self.allocator.free(uri);
-    var buffer: [8096]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);
 
     const req = try self.request(
@@ -40,5 +37,3 @@ fn createMultipartUpload(
 
     return upload_id;
 }
-
-

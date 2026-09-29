@@ -29,4 +29,6 @@ pub const S3Error = error{
     ServerNotImplemented,
     /// Multipart Upload has been aborted
     AbortedMultipartUpload,
+    /// Parameter cannot be processed
+    UnprocessableParameter,
 };

@@ -6,7 +6,6 @@ const S3Client = client_impl.S3Client;
 const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
-
 const CompleteMultipartObjectOptions = struct {
     bucket_name: []const u8,
     key: []const u8,
@@ -14,7 +13,7 @@ const CompleteMultipartObjectOptions = struct {
     e_tag_list: [][]const u8,
 };
 
-fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOptions) !void {
+pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOptions) !void {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploadId={s}",
@@ -24,16 +23,16 @@ fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOpti
 
     var out: std.Io.Writer.Allocating = try .initCapacity(self.allocator, 8096);
     defer out.deinit();
-    
+
     var part_number: u8 = 1;
     try out.writer.writeAll("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     try out.writer.writeAll("<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">");
     for (options.e_tag_list) |e_tag| {
         try out.writer.writeAll("<Part>");
-        try out.writer.print("<PartNumber>{d}</PartNumber>", .{ part_number });
-        try out.writer.print("<ETag>{s}</ETag>", .{ e_tag });
+        try out.writer.print("<PartNumber>{d}</PartNumber>", .{part_number});
+        try out.writer.print("<ETag>{s}</ETag>", .{e_tag});
         try out.writer.writeAll("</Part>");
-        
+
         part_number += 1;
     }
 
@@ -42,7 +41,7 @@ fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOpti
 
     const data = out.writer.buffered();
 
-    std.debug.print("\nComplete\n {s}\n", .{ data });
+    std.debug.print("\nComplete\n {s}\n", .{data});
 
     var buff: [4096]u8 = undefined;
     var body_writer: std.Io.Writer = .fixed(&buff);
@@ -55,14 +54,18 @@ fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOpti
     );
 
     const response = body_writer.buffered();
-    std.debug.print("\nBody Response: {s}", .{ response });
-
-    _  = xml.getByKey(self.allocator, response, "Error") catch |err| {
-        if (err != xml.XMLError.KeyNotFound) return S3Error.InvalidResponse;
-    };
+    std.debug.print("\nBody Response: {s}", .{response});
 
     if (req.status != .ok) {
         return S3Error.InvalidResponse;
     }
-}
 
+    const key = xml.getByKey(self.allocator, response, "Error") catch |err| {
+        if (err != xml.XMLError.KeyNotFound) return S3Error.InvalidResponse;
+    };
+    defer self.allocator.free(key);
+
+    if (key) {
+        return S3Error.InvalidResponse;
+    }
+}

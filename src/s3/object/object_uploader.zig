@@ -5,48 +5,140 @@ const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
 const putObject = @import("put_object.zig").putObject;
 const getObject = @import("get_object.zig").getObject;
+const createMultipartUpload = @import("create_multipart_upload.zig").createMultipartUpload;
+const abortMultipartUpload = @import("abort_multipart_upload.zig").abortMultipartUpload;
+const putMultipartObject = @import("put_multipart_object.zig").putMultipartObject;
+const completeMultipartUpload = @import("complete_multipart_upload.zig").completeMultipartUpload;
 const deleteObject = @import("delete_object.zig").deleteObject;
 const createBucket = @import("../bucket/lib.zig").createBucket;
 const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
+const ObjectUploaderOptions = struct {
+    // DISCLAIMER: This param will be removed in the future for a dynamic size calculation
+    upload_part_size_mb: ?u8 = 5,
+    minimum_multipart_upload_mb: ?u8 = 50,
+};
+
 pub const ObjectUploader = struct {
     client: *S3Client,
+    upload_part_size: u16,
+    minimum_multipart_upload: u16,
 
-    pub fn init(client: *S3Client) ObjectUploader {
+    pub fn init(client: *S3Client, options: ObjectUploaderOptions) ObjectUploader {
         return .{
             .client = client,
+            .upload_part_size = options.upload_part_size_mb * 1024 * 1024,
+            .minimum_multipart_upload = options.minimum_multipart_upload_mb * 1024 * 1024,
         };
     }
 
     /// Uploads a file from the filesystem to S3
     /// Handles the file reading and binary conversion automatically
-    pub fn uploadFile(
-        self: *ObjectUploader,
+    pub fn uploadFile(self: *ObjectUploader, options: struct {
         bucket_name: []const u8,
         key: []const u8,
         file_path: []const u8,
-    ) !void {
+    }) !void {
         // Open the file
         var threaded: std.Io.Threaded = .init_single_threaded;
         const io = threaded.io();
         const directory = std.Io.Dir.cwd();
-        const file = try directory.openFile(io, file_path, .{});
+        const file = try directory.openFile(io, options.file_path, .{});
         defer file.close(io);
 
         // Get file size
         const file_size = try file.length(io);
 
-        // Allocate buffer and read file
-        const buffer = try self.client.allocator.alloc(u8, file_size);
-        defer self.client.allocator.free(buffer);
+        if (file_size < self.minimum_multipart_upload) {
+            // Allocate buffer and read file
+            const buffer = try self.client.allocator.alloc(u8, file_size);
+            defer self.client.allocator.free(buffer);
 
-        const bytes_read = try file.readPositionalAll(io, buffer, 0);
-        if (bytes_read != file_size) {
-            return error.IncompleteRead;
+            const bytes_read = try file.readPositionalAll(io, buffer, 0);
+            if (bytes_read != file_size) {
+                return error.IncompleteRead;
+            }
+
+            // Upload the binary data
+            try putObject(self.client, .{ .bucket_name = options.bucket_name, .key = options.key, .data = buffer });
+            return;
         }
 
-        // Upload the binary data
-        try putObject(self.client, .{ .bucket_name = bucket_name, .key = key, .data = buffer });
+        // create multipart upload to get the upload id
+        const upload_id = try self.createMultipartUpload(.{
+            .bucket_name = options.bucket_name,
+            .key = options.key,
+        });
+        defer self.allocator.free(upload_id);
+
+        // abort in case of error
+        errdefer {
+            _ = self.abortMultipartUpload(.{
+                .bucket_name = options.bucket_name,
+                .key = options.key,
+                .upload_id = upload_id,
+            }) catch {};
+        }
+
+        // Creating buffer
+        var upload_buffer: []u8 = try self.client.allocator.create(
+            [self.upload_part_size]u8,
+        );
+        defer self.client.allocator.free(upload_buffer);
+
+        //Creating Writer and e_tag list
+        var upload_writer: std.Io.Writer = .fixed(&upload_buffer);
+        var e_tag_list: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (e_tag_list.items) |object| {
+                self.allocator.free(object);
+            }
+            e_tag_list.deinit(self.allocator);
+        }
+
+        // Iterate the file content
+        var out_size: usize = 1;
+        var part_number: u8 = 1;
+
+        while (out_size > 0) : (part_number += 1) {
+            var file_reader = file.readerStreaming(io, &upload_buffer);
+            out_size = file_reader.streamMode(
+                &upload_writer,
+                .limited(self.upload_part_size),
+                .streaming_simple,
+            ) catch |err| {
+                if (err == std.Io.Reader.StreamError.EndOfStream) break;
+                return S3Error.AbortedMultipartUpload;
+            };
+            defer _ = upload_writer.consumeAll();
+
+            // End of file check
+            if (out_size == 0) break;
+            const upload_data = upload_writer.buffered();
+
+            // TODO: COLOCAR FUNĆÕES MULTIPART NO CLIENTE
+            const etag = try self.putMultipartObject(.{
+                .bucket_name = options.bucket_name,
+                .key = options.key,
+                .upload_id = upload_id,
+                .part_number = part_number,
+                .data = upload_data,
+            });
+
+            e_tag_list.append(etag);
+        }
+
+        //try listMultipartUpload(self, .{
+        //    .bucket_name = options.bucket_name,
+        //    .key = options.key,
+        //    .upload_id = upload_id,
+        //});
+        try self.completeMultipartUpload(.{
+            .bucket_name = options.bucket_name,
+            .key = options.key,
+            .upload_id = upload_id,
+            .e_tag_list = e_tag_list.items,
+        });
     }
 
     /// Uploads string data to S3

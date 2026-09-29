@@ -10,120 +10,47 @@ const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
 const UPLOAD_PART_SIZE: usize = 1024 * 1024 * 5;
 
-
-
-
-
 pub const PutMultipartObjectOptions = struct {
     bucket_name: []const u8,
     key: []const u8,
-    reader: *std.Io.Reader,
+    upload_id: []const u8,
+    part_number: u8,
+    data: []const u8,
 };
 
-
-
-pub fn putMultipartObject(self: *S3Client, options: PutMultipartObjectOptions) !void {
-    const upload_id = try createMultipartUpload(self, .{
-        .bucket_name = options.bucket_name,
-        .key = options.key,
+pub fn putMultipartObject(self: *S3Client, options: PutMultipartObjectOptions) ![]const u8 {
+    const uri_string = try std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}?partNumber={d}&uploadId={s}", .{
+        self.config.endpoint,
+        options.bucket_name,
+        options.key,
+        options.part_number,
+        options.upload_id,
     });
-    defer self.allocator.free(upload_id);
-    //errdefer {
-    //    _ = abortMultipartUpload(
-    //        self, .{
-    //            .bucket_name = options.bucket_name,
-    //            .key = options.key,
-    //            .upload_id = upload_id,
-    //        }
-    //    ) catch {
-    //        return S3Error.InvalidObjectKey;
-    //    };
-    //}
+    defer self.allocator.free(uri_string);
+    const uri = try Uri.parse(uri_string);
 
-    // TODO: GERAR EM UM LOOP PARA ITERAR O PART_NUMBER
-    
-    var out_size: usize = 1;
-    var part_number: u8 = 1;
+    std.debug.print("URL: {s}\n", .{uri_string});
 
-    // TODO: ANALISAR COMO DEIXAR DINÂMICO
-    var upload_buffer: [UPLOAD_PART_SIZE]u8 = undefined;
-    var upload_writer: std.Io.Writer = .fixed(&upload_buffer); 
-    var e_tag_list: std.ArrayList([] const u8) = .empty;
+    const req = try self.requestWriter(.{
+        .method = .PUT,
+        .uri = uri,
+        .payload = options.data,
+        .response_body_writer = null,
+    });
     defer {
-        for (e_tag_list.items) |object| {
-            self.allocator.free(object);
-        }
-        e_tag_list.deinit(self.allocator);
+        if (req.headers.content_type != null) self.allocator.free(req.headers.content_type.?);
     }
 
+    //std.debug.print("\nResponse: {any}\n", .{req.headers});
 
-    while (out_size > 0) {
-        out_size = options.reader.stream(&upload_writer, .limited(UPLOAD_PART_SIZE)) catch |err| {
-            if (err == std.Io.Reader.StreamError.EndOfStream) break;
-            // TODO: ABORTAR OPERACAO
-            return S3Error.AbortedMultipartUpload;
-        };
-        defer _ = upload_writer.consumeAll();
-        if (out_size == 0) break;
-
-        const uri_string = try std.fmt.allocPrint(
-            self.allocator,
-            "{s}/{s}/{s}?partNumber={d}&uploadId={s}",
-            .{
-                self.config.endpoint,
-                options.bucket_name,
-                options.key,
-                part_number,
-                upload_id,
-            }
-        );
-        defer self.allocator.free(uri_string);
-        const uri = try Uri.parse(uri_string);
-
-        std.debug.print("URL: {s}\n", .{ uri_string });
-
-        std.debug.print("out_size: {d}\n", .{ out_size });
-        part_number += 1;
-
-        const upload_data = upload_writer.buffered();
-        //std.debug.print("Data: {s}\n", .{ upload_data });
-
-        const req = try self.requestWriter(.{
-            .method = .PUT, 
-            .uri = uri, 
-            .payload = upload_data, 
-            .response_body_writer = null,
-        });
-        defer {
-            if (req.headers.content_type != null) self.allocator.free(req.headers.content_type.?);
-        }
-
-        //std.debug.print("\nResponse: {any}\n", .{req.headers});
-        if (req.headers.e_tag) |e_tag| {
-           try e_tag_list.append(self.allocator, e_tag);
-        }
-
-        if (req.status == .bad_request) {
-            return S3Error.InvalidObjectKey;
-        }
-        if (req.status != .ok) {
-            return S3Error.InvalidResponse;
-        }
+    if (req.status == .bad_request) {
+        return S3Error.InvalidObjectKey;
+    }
+    if (req.status != .ok) {
+        return S3Error.InvalidResponse;
     }
 
-    //try listMultipartUpload(self, .{
-    //    .bucket_name = options.bucket_name,
-    //    .key = options.key,
-    //    .upload_id = upload_id,
-    //});
-
-    std.debug.print("\nEtags: {any}", .{e_tag_list.items});
-    try completeMultipartUpload(self, .{
-        .bucket_name = options.bucket_name,
-        .key = options.key,
-        .upload_id = upload_id,
-        .e_tag_list = e_tag_list.items,
-    });
+    return req.headers.e_tag;
 }
 
 test "Before All - Put Multipart Object" {

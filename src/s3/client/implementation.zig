@@ -254,15 +254,12 @@ pub const S3Client = struct {
 
     // TODO: REFACT TO USE STREAMING IN MEMORY - CREATE HASH AND UPLOAD WITH STREAM TO NOT IMPACT MEMORY
     // TODO: VALIDAR O TIPO DE MÉTODO
-    pub fn requestWriter(
-        self: *S3Client,
-        params: struct {
-            method: http.Method,
-            uri: Uri,
-            response_body_writer: ?*std.Io.Writer,
-            payload: ?[]const u8,
-        }
-    ) !Response {
+    pub fn requestWriter(self: *S3Client, params: struct {
+        method: http.Method,
+        uri: Uri,
+        response_body_writer: ?*std.Io.Writer,
+        payload: ?[]const u8,
+    }) !Response {
         const options = try RequestOptions.init(
             self.allocator,
             self.http_client.io,
@@ -300,14 +297,13 @@ pub const S3Client = struct {
         var header_data = header_iterator.next();
         var header_response: HeadersResponse = .{};
 
-        while(header_data) | header | {
+        while (header_data) |header| {
             std.debug.print("\nName: {s} - value: {s}\n", .{ header.name, header.value });
 
             if (std.ascii.eqlIgnoreCase(header.name, "content-type")) {
-               header_response.content_type = try std.fmt.allocPrint(self.allocator, "{s}", .{ header.value });
-            }
-            else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
-               header_response.e_tag = try std.fmt.allocPrint(self.allocator, "{s}", .{ header.value });
+                header_response.content_type = try std.fmt.allocPrint(self.allocator, "{s}", .{header.value});
+            } else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
+                header_response.e_tag = try std.fmt.allocPrint(self.allocator, "{s}", .{header.value});
             }
             header_data = header_iterator.next();
         }
@@ -317,7 +313,7 @@ pub const S3Client = struct {
         const reader = response.reader(&transfer_buffer);
         // TODO: COLOCAR TRATATIVAS
 
-        if (params.response_body_writer != null) { 
+        if (params.response_body_writer != null) {
             _ = try reader.streamRemaining(params.response_body_writer.?);
         }
 
@@ -422,9 +418,9 @@ test "S3Client request writer stream" {
     const body = "Hello, S3!";
 
     const req = try client.requestWriter(.{
-        .method = .PUT, 
-        .uri = uri, 
-        .payload = body, 
+        .method = .PUT,
+        .uri = uri,
+        .payload = body,
         .response_body_writer = &out,
     });
     try std.testing.expectEqual(req.status, .forbidden);
