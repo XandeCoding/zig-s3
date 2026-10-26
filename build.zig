@@ -158,6 +158,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = object_imports,
     });
+
+    const put_multipart_object_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/object/put_multipart_object.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = object_imports,
+    });
+
     const delete_object_module = b.createModule(.{
         .root_source_file = b.path("src/s3/object/delete_object.zig"),
         .target = target,
@@ -184,6 +192,7 @@ pub fn build(b: *std.Build) void {
         .{ .module = get_object_module, .filters = &.{"get_object"} },
         .{ .module = list_objects_module, .filters = &.{"list_objects"} },
         .{ .module = put_object_module, .filters = &.{"put_object"} },
+        .{ .module = put_multipart_object_module, .filters = &.{"put_multipart_object"} },
         .{ .module = delete_object_module, .filters = &.{"delete_object"} },
         .{ .module = object_uploader_module, .filters = &.{"object_uploader"} },
     };

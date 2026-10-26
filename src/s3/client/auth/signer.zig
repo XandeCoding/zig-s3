@@ -65,6 +65,23 @@ pub const Credentials = struct {
     service: Service = "s3",
 };
 
+pub fn createSignHeaders(
+    allocator: std.mem.Allocator,
+    uri_host: []const u8,
+    content_hash: []const u8,
+    amz_date: []const u8,
+) !std.StringHashMap([]const u8) {
+    var headers = std.StringHashMap([]const u8).init(allocator);
+
+    // Add required headers in specific order
+    try headers.put("content-type", "application/xml");
+    try headers.put("host", uri_host);
+    try headers.put("x-amz-content-sha256", content_hash);
+    try headers.put("x-amz-date", amz_date);
+
+    return headers;
+}
+
 /// Request parameters needed for signing
 pub const SigningParams = struct {
     /// HTTP method (GET, PUT, etc.)

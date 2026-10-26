@@ -17,8 +17,8 @@
 //! defer client.deinit();
 //!
 //! // Use the client
-//! try client.createBucket("my-bucket");
-//! try client.putObject("my-bucket", "hello.txt", "Hello, S3!");
+//! try client.createBucket(.{ .bucket_name = "my-bucket" });
+//! try client.putObject(.{ .bucket_name = "my-bucket", .key = "hello.txt", .data = "Hello, S3!" });
 //! ```
 const std = @import("std");
 const client = @import("client/implementation.zig");
@@ -164,8 +164,28 @@ pub const S3Client = struct {
         return object_lib.listObjects(self.inner, options);
     }
 
+    pub fn createMultipartUpload(self: *S3Client, options: object_lib.CreateMultipartOptions) ![]const u8 {
+        return object_lib.createMultipartUpload(self.inner, options);
+    }
+
+    pub fn listMultipartUpload(self: *S3Client, options: object_lib.ListMultipartUploadOptions) ![]const u8 {
+        return object_lib.listMultipartUpload(self.inner, options);
+    }
+
+    pub fn abortMultipartUpload(self: *S3Client, options: object_lib.AbortMultipartUploadOptions) !void {
+        return object_lib.abortMultipartUpload(self.inner, options);
+    }
+
+    pub fn putMultipartUpload(self: *S3Client, options: object_lib.PutMultipartUploadOptions) ![]const u8 {
+        return object_lib.putMultipartUpload(self.inner, options);
+    }
+
+    pub fn completeMultipartUpload(self: *S3Client, options: object_lib.CompleteMultipartUploadOptions) !void {
+        return object_lib.completeMultipartUpload(self.inner, options);
+    }
+
     /// Create an object uploader helper for this client
-    pub fn uploader(self: *S3Client) ObjectUploader {
-        return ObjectUploader.init(self.inner);
+    pub fn uploader(self: *S3Client, options: object_lib.ObjectUploaderOptions) ObjectUploader {
+        return ObjectUploader.init(self.inner, options);
     }
 };

@@ -1,7 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 
-const XMLError = error{ KeyNotFound, UnableToAllocateKey };
+pub const XMLError = error{ KeyNotFound, UnableToAllocateKey };
 
 pub fn getByKey(allocator: mem.Allocator, xml: []const u8, key: []const u8) ![]const u8 {
     const key_initial_bracket = try std.fmt.allocPrint(allocator, "<{s}>", .{key});
