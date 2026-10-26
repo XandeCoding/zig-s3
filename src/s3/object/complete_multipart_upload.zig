@@ -6,14 +6,14 @@ const S3Client = client_impl.S3Client;
 const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
-const CompleteMultipartObjectOptions = struct {
+pub const CompleteMultipartUploadOptions = struct {
     bucket_name: []const u8,
     key: []const u8,
     upload_id: []const u8,
     e_tag_list: [][]const u8,
 };
 
-pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObjectOptions) !void {
+pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUploadOptions) !void {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploadId={s}",
@@ -62,10 +62,11 @@ pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartObject
 
     const key = xml.getByKey(self.allocator, response, "Error") catch |err| {
         if (err != xml.XMLError.KeyNotFound) return S3Error.InvalidResponse;
+        return;
     };
     defer self.allocator.free(key);
 
-    if (key) {
+    if (key.len > 0) {
         return S3Error.InvalidResponse;
     }
 }

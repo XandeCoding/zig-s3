@@ -46,7 +46,8 @@ S3-compatible services.
 - [x] Remove dotenv
 - [x] Improve tests perfomance 
 - [x] Break each object or bucket operation in a module
-- [ ] Streaming files
+- [x] Multipart upload
+- [ ] Multipart upload with dinamic chunk size
 - [ ] Add all S3 operation options to functions
 - [ ] Use UTC at creating amz credentials
 - [ ] Run tests concurrently

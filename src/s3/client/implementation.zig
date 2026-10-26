@@ -279,7 +279,6 @@ pub const S3Client = struct {
 
         if (params.payload) |payload| {
             req.transfer_encoding = .{ .content_length = payload.len };
-            // TODO: VALIDAR BUFFER
             var buffer: [8096]u8 = undefined;
             var body = try req.sendBodyUnflushed(&buffer);
 
@@ -298,8 +297,6 @@ pub const S3Client = struct {
         var header_response: HeadersResponse = .{};
 
         while (header_data) |header| {
-            std.debug.print("\nName: {s} - value: {s}\n", .{ header.name, header.value });
-
             if (std.ascii.eqlIgnoreCase(header.name, "content-type")) {
                 header_response.content_type = try std.fmt.allocPrint(self.allocator, "{s}", .{header.value});
             } else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
@@ -311,7 +308,6 @@ pub const S3Client = struct {
         // TODO: CHECAR BUFFER
         var transfer_buffer: [64]u8 = undefined;
         const reader = response.reader(&transfer_buffer);
-        // TODO: COLOCAR TRATATIVAS
 
         if (params.response_body_writer != null) {
             _ = try reader.streamRemaining(params.response_body_writer.?);

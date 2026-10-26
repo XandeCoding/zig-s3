@@ -6,12 +6,12 @@ const S3Client = client_impl.S3Client;
 const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
-const CreateMultipartObjectOptions = struct {
+pub const CreateMultipartUploadOptions = struct {
     bucket_name: []const u8,
     key: []const u8,
 };
 
-pub fn createMultipartUpload(self: *S3Client, options: CreateMultipartObjectOptions) ![]const u8 {
+pub fn createMultipartUpload(self: *S3Client, options: CreateMultipartUploadOptions) ![]const u8 {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploads=",

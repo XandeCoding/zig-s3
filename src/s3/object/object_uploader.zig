@@ -13,16 +13,16 @@ const deleteObject = @import("delete_object.zig").deleteObject;
 const createBucket = @import("../bucket/lib.zig").createBucket;
 const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
-const ObjectUploaderOptions = struct {
+pub const ObjectUploaderOptions = struct {
     // DISCLAIMER: This param will be removed in the future for a dynamic size calculation
-    upload_part_size_mb: ?u8 = 5,
-    minimum_multipart_upload_mb: ?u8 = 50,
+    comptime upload_part_size_mb: u32 = 5,
+    comptime minimum_multipart_upload_mb: u32 = 50,
 };
 
 pub const ObjectUploader = struct {
     client: *S3Client,
-    upload_part_size: u16,
-    minimum_multipart_upload: u16,
+    comptime upload_part_size: u32 = 5 * 1024 * 1024,
+    comptime minimum_multipart_upload: u32 = 50 * 1024 * 1024,
 
     pub fn init(client: *S3Client, options: ObjectUploaderOptions) ObjectUploader {
         return .{
@@ -34,16 +34,18 @@ pub const ObjectUploader = struct {
 
     /// Uploads a file from the filesystem to S3
     /// Handles the file reading and binary conversion automatically
-    pub fn uploadFile(self: *ObjectUploader, options: struct {
+    pub fn uploadFile(
+        self: *ObjectUploader,
         bucket_name: []const u8,
         key: []const u8,
         file_path: []const u8,
-    }) !void {
+    ) !void {
+        // TODO: add io as parameter?
         // Open the file
         var threaded: std.Io.Threaded = .init_single_threaded;
         const io = threaded.io();
         const directory = std.Io.Dir.cwd();
-        const file = try directory.openFile(io, options.file_path, .{});
+        const file = try directory.openFile(io, file_path, .{});
         defer file.close(io);
 
         // Get file size
@@ -60,82 +62,72 @@ pub const ObjectUploader = struct {
             }
 
             // Upload the binary data
-            try putObject(self.client, .{ .bucket_name = options.bucket_name, .key = options.key, .data = buffer });
+            try putObject(self.client, .{
+                .bucket_name = bucket_name,
+                .key = key,
+                .data = buffer,
+            });
             return;
         }
 
         // create multipart upload to get the upload id
-        const upload_id = try self.createMultipartUpload(.{
-            .bucket_name = options.bucket_name,
-            .key = options.key,
+        const upload_id = try createMultipartUpload(self.client, .{
+            .bucket_name = bucket_name,
+            .key = key,
         });
-        defer self.allocator.free(upload_id);
+        defer self.client.allocator.free(upload_id);
 
         // abort in case of error
         errdefer {
-            _ = self.abortMultipartUpload(.{
-                .bucket_name = options.bucket_name,
-                .key = options.key,
+            _ = abortMultipartUpload(self.client, .{
+                .bucket_name = bucket_name,
+                .key = key,
                 .upload_id = upload_id,
             }) catch {};
         }
 
         // Creating buffer
-        var upload_buffer: []u8 = try self.client.allocator.create(
+        const upload_buffer: []u8 = try self.client.allocator.create(
             [self.upload_part_size]u8,
         );
         defer self.client.allocator.free(upload_buffer);
 
-        //Creating Writer and e_tag list
-        var upload_writer: std.Io.Writer = .fixed(&upload_buffer);
+        // Creating Writer and e_tag list
         var e_tag_list: std.ArrayList([]const u8) = .empty;
         defer {
             for (e_tag_list.items) |object| {
-                self.allocator.free(object);
+                self.client.allocator.free(object);
             }
-            e_tag_list.deinit(self.allocator);
+            e_tag_list.deinit(self.client.allocator);
         }
 
         // Iterate the file content
         var out_size: usize = 1;
+        var offset: usize = 0;
         var part_number: u8 = 1;
 
         while (out_size > 0) : (part_number += 1) {
-            var file_reader = file.readerStreaming(io, &upload_buffer);
-            out_size = file_reader.streamMode(
-                &upload_writer,
-                .limited(self.upload_part_size),
-                .streaming_simple,
-            ) catch |err| {
-                if (err == std.Io.Reader.StreamError.EndOfStream) break;
-                return S3Error.AbortedMultipartUpload;
-            };
-            defer _ = upload_writer.consumeAll();
+            out_size = try file.readPositionalAll(io, upload_buffer, offset);
 
             // End of file check
             if (out_size == 0) break;
-            const upload_data = upload_writer.buffered();
 
-            // TODO: COLOCAR FUNĆÕES MULTIPART NO CLIENTE
-            const etag = try self.putMultipartObject(.{
-                .bucket_name = options.bucket_name,
-                .key = options.key,
+            offset += out_size;
+
+            const etag = try putMultipartObject(self.client, .{
+                .bucket_name = bucket_name,
+                .key = key,
                 .upload_id = upload_id,
                 .part_number = part_number,
-                .data = upload_data,
+                .data = upload_buffer[0..out_size],
             });
 
-            e_tag_list.append(etag);
+            try e_tag_list.append(self.client.allocator, etag);
         }
 
-        //try listMultipartUpload(self, .{
-        //    .bucket_name = options.bucket_name,
-        //    .key = options.key,
-        //    .upload_id = upload_id,
-        //});
-        try self.completeMultipartUpload(.{
-            .bucket_name = options.bucket_name,
-            .key = options.key,
+        try completeMultipartUpload(self.client, .{
+            .bucket_name = bucket_name,
+            .key = key,
             .upload_id = upload_id,
             .e_tag_list = e_tag_list.items,
         });
@@ -235,32 +227,20 @@ test "upload different types" {
 
     try file.writePositionalAll(io, "upload file test", 0);
 
-    var uploader = ObjectUploader.init(test_client);
+    var uploader = ObjectUploader.init(test_client, .{});
 
     // File upload
-    try uploader.uploadFile(
-        bucket_name,
-        "images/upload.txt",
-        "upload.txt",
-    );
+    try uploader.uploadFile(bucket_name, "images/upload.txt", "upload.txt");
 
     // String upload
-    try uploader.uploadString(
-        bucket_name,
-        "text/hello.txt",
-        "Hello, World!",
-    );
+    try uploader.uploadString(bucket_name, "text/hello.txt", "Hello, World!");
 
     // JSON upload
     const json_data = .{
         .name = "John",
         .age = 30,
     };
-    try uploader.uploadJson(
-        bucket_name,
-        "data/user.json",
-        json_data,
-    );
+    try uploader.uploadJson(bucket_name, "data/user.json", json_data);
 }
 
 test "ObjectUploader basic functionality" {
@@ -278,14 +258,17 @@ test "ObjectUploader basic functionality" {
     // Create test bucket
     const bucket_name = "test-uploader";
 
-    var uploader = ObjectUploader.init(test_client);
+    var uploader = ObjectUploader.init(test_client, .{});
 
     // Test string upload
     const test_string = "Hello, World!";
     try uploader.uploadString(bucket_name, "test.txt", test_string);
 
     // Verify string upload
-    const retrieved_string = try getObject(test_client, .{ .bucket_name = bucket_name, .key = "test.txt" });
+    const retrieved_string = try getObject(test_client, .{
+        .bucket_name = bucket_name,
+        .key = "test.txt",
+    });
     defer allocator.free(retrieved_string);
     try std.testing.expectEqualStrings(test_string, retrieved_string);
 
@@ -323,6 +306,58 @@ test "ObjectUploader basic functionality" {
     try std.testing.expectEqualStrings("tag2", parsed.value.tags[1]);
 }
 
+test "ObjectUploader using multipart file upload" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    // Create test bucket
+    const bucket_name = "test-uploader";
+
+    var uploader = ObjectUploader.init(test_client, .{});
+
+    // Test string upload
+    const test_string = "Hello, World!" ** (1024 * 100);
+    // Create temporary directory for test files
+    var directory = std.testing.tmpDir(.{});
+    defer directory.cleanup();
+
+    const filename = "multipart_file.txt";
+    const file = try directory.dir.createFile(io, filename, .{ .read = true });
+    defer file.close(io);
+
+    var count: u8 = 0;
+    const max = 50;
+    while (count < max) : (count += 1) {
+        try file.writePositionalAll(io, test_string, count * test_string.len);
+    }
+    const file_path = try directory.dir.realPathFileAlloc(io, filename, allocator);
+    defer allocator.free(file_path);
+
+    try uploader.uploadFile("test-uploader", "multipart_file.txt", file_path);
+
+    const retrieved_file = try getObject(test_client, .{ .bucket_name = bucket_name, .key = filename });
+    defer allocator.free(retrieved_file);
+
+    try std.testing.expectEqual(test_string.len * max, retrieved_file.len);
+
+    var out_size: usize = 1;
+    var offset: usize = 0;
+    var upload_buffer: [1024 * 1024]u8 = undefined;
+
+    while (out_size != 0) : (offset += out_size) {
+        out_size = try file.readPositionalAll(io, &upload_buffer, offset);
+        try std.testing.expectEqualStrings(upload_buffer[0..out_size], retrieved_file[offset .. offset + out_size]);
+    }
+}
+
 test "ObjectUploader file operations" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -338,7 +373,7 @@ test "ObjectUploader file operations" {
     // Create test bucket
     const bucket_name = "test-file-uploader";
 
-    var uploader = ObjectUploader.init(test_client);
+    var uploader = ObjectUploader.init(test_client, .{});
 
     // Create a temporary test file
     const test_content = "Test file content";
@@ -378,7 +413,7 @@ test "ObjectUploader error cases" {
     });
     defer test_client.deinit();
 
-    var uploader = ObjectUploader.init(test_client);
+    var uploader = ObjectUploader.init(test_client, .{});
 
     // Test non-existent bucket
     try std.testing.expectError(
@@ -395,7 +430,11 @@ test "ObjectUploader error cases" {
     // Test non-existent file
     try std.testing.expectError(
         error.FileNotFound,
-        uploader.uploadFile("test-bucket", "test.txt", "nonexistent/file.txt"),
+        uploader.uploadFile(
+            "test-bucket",
+            "test.txt",
+            "nonexistent/file.txt",
+        ),
     );
 }
 
@@ -411,7 +450,7 @@ test "ObjectUploader with custom endpoint" {
     });
     defer test_client.deinit();
 
-    var uploader = ObjectUploader.init(test_client);
+    var uploader = ObjectUploader.init(test_client, .{});
 
     // Create test bucket
     const bucket_name = "test-custom-endpoint";
@@ -458,6 +497,7 @@ test "After All - Object Uploader" {
         .{ .bucket_name = "test-upload-different-types", .key = "data/user.json" },
         .{ .bucket_name = "test-uploader", .key = "test.txt" },
         .{ .bucket_name = "test-uploader", .key = "test.json" },
+        .{ .bucket_name = "test-uploader", .key = "multipart_file.txt" },
         .{ .bucket_name = "test-file-uploader", .key = "uploaded.txt" },
         .{ .bucket_name = "test-custom-endpoint", .key = "test.txt" },
     };

@@ -7,9 +7,9 @@ const URLQueryParam = struct {
 
 // TODO: TRATAR ANOTHER TYPES OF HOST
 pub fn create_url(
-    allocator: std.mem.Allocator, 
+    allocator: std.mem.Allocator,
     endpoint: []const u8,
-    path_params: [][]const u8, 
+    path_params: [][]const u8,
     query_params: ?[]const URLQueryParam,
 ) ![]const u8 {
     const out: std.Io.Writer.Allocating = .allocating(allocator);
@@ -31,7 +31,7 @@ pub fn create_url(
         out.writer.writeAll("&");
         out.writer.writeAll(query);
     }
-    
+
     return out.written();
 }
 

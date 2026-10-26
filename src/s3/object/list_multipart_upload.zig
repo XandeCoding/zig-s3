@@ -6,14 +6,14 @@ const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
 // TODO: ADD KEYMARKER OPTION TO PAGINATE
-const ListMultipartObjectOptions = struct {
+pub const ListMultipartUploadOptions = struct {
     bucket_name: []const u8,
     key: []const u8,
     upload_id: []const u8,
     max_parts: u8 = 100,
 };
 
-fn listMultipartUpload(self: *S3Client, options: ListMultipartObjectOptions) !void {
+pub fn listMultipartUpload(self: *S3Client, options: ListMultipartUploadOptions) ![]const u8 {
     if (options.max_parts > 1000) {
         return S3Error.UnprocessableParameter;
     }
@@ -45,6 +45,8 @@ fn listMultipartUpload(self: *S3Client, options: ListMultipartObjectOptions) !vo
         return S3Error.InvalidResponse;
     }
 
+    // TODO: IMPROVE THIS
     const data = out.buffered();
     std.debug.print("\n{s}\n", .{data});
+    return data;
 }

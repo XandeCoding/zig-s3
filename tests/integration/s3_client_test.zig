@@ -144,7 +144,7 @@ test "upload simple file to test-bucket" {
     defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
     // Create uploader and upload string
-    var uploader = client.uploader();
+    var uploader = client.uploader(.{});
     uploader.uploadString(bucket_name, file_key, file_content) catch |err| {
         std.debug.print("Failed to upload file: {any}\n", .{err});
         return err;
@@ -199,10 +199,14 @@ test "full client lifecycle" {
 
     // Test object operations
     {
-        var uploader = client.uploader();
+        var uploader = client.uploader(.{});
 
         // Upload different types of content
-        try uploader.uploadString(bucket_name, "hello.txt", "Hello, Integration Tests!");
+        try uploader.uploadString(
+            bucket_name,
+            "hello.txt",
+            "Hello, Integration Tests!",
+        );
         std.debug.print("String upload succesfull...\n", .{});
 
         const timestamp = std.Io.Timestamp.now(io, std.Io.Clock.real).toMilliseconds();
@@ -358,7 +362,7 @@ test "pagination and prefixes" {
     defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
     std.debug.print("Bucket created: {s}...\n", .{bucket_name});
 
-    var uploader = client.uploader();
+    var uploader = client.uploader(.{});
 
     // Create test objects with different prefixes
     const prefixes = [_][]const u8{ "folder1/", "folder2/", "folder3/" };
@@ -494,7 +498,7 @@ test "file upload and download" {
     try client.createBucket(.{ .bucket_name = bucket_name });
     defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
 
-    var uploader = client.uploader();
+    var uploader = client.uploader(.{});
 
     // Test text file upload
     {
@@ -522,7 +526,11 @@ test "file upload and download" {
     // Test JSON file upload
     {
         const s3_key = "json/config.json";
-        try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/config.json");
+        try uploader.uploadFile(
+            bucket_name,
+            s3_key,
+            "tests/integration/assets/config.json",
+        );
 
         // Verify uploaded content
         const downloaded = try client.getObject(.{ .bucket_name = bucket_name, .key = s3_key });
