@@ -41,8 +41,6 @@ pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUpload
 
     const data = out.writer.buffered();
 
-    std.debug.print("\nComplete\n {s}\n", .{data});
-
     var buff: [4096]u8 = undefined;
     var body_writer: std.Io.Writer = .fixed(&buff);
 
