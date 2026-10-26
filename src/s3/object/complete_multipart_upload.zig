@@ -54,7 +54,6 @@ pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUpload
     );
 
     const response = body_writer.buffered();
-    std.debug.print("\nBody Response: {s}", .{response});
 
     if (req.status != .ok) {
         return S3Error.InvalidResponse;

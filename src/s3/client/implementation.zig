@@ -105,13 +105,11 @@ pub const RequestOptions = struct {
             .{ .name = "Authorization", .value = auth_header },
         };
 
-        // TODO: CONTENT-LENGHT HEADER QUEBRA OUTRAS CHAMADAS?
         const options = FetchOptions{
             .location = .{
                 .uri = uri,
             },
             .method = method,
-            // TODO: CHECK IF MAKES SENSE MAINTAINS IT HERE
             .response_writer = writer,
             .payload = normalizePayload(method, payload),
             .headers = .{

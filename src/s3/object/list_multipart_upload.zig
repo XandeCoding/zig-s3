@@ -47,6 +47,5 @@ pub fn listMultipartUpload(self: *S3Client, options: ListMultipartUploadOptions)
 
     // TODO: IMPROVE THIS
     const data = out.buffered();
-    std.debug.print("\n{s}\n", .{data});
     return data;
 }
