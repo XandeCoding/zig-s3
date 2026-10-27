@@ -183,11 +183,12 @@ test "put objects with invalid keys" {
     const bucket_name = "object-invalid-name-bucket";
 
     // Test various invalid object keys
+    const long_key: [1025]u8 = @splat('a');
     const invalid_keys = [_][]const u8{
         "", // Empty
         "key\nwith\nnewlines", // Contains newlines
         "key with\x00null", // Contains null byte
-        "a" ** 1025, // Too long (max is 1024)
+        &long_key, // Too long (max is 1024)
     };
 
     for (invalid_keys) |key| {

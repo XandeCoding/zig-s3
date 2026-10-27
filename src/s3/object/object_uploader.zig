@@ -324,7 +324,7 @@ test "ObjectUploader using multipart file upload" {
     var uploader = ObjectUploader.init(test_client, .{});
 
     // Test string upload
-    const test_string = "Hello, World!" ** (1024 * 100);
+    const test_string: [1024 * 100]u8 = @splat('A');
     // Create temporary directory for test files
     var directory = std.testing.tmpDir(.{});
     defer directory.cleanup();
@@ -336,7 +336,7 @@ test "ObjectUploader using multipart file upload" {
     var count: u8 = 0;
     const max = 50;
     while (count < max) : (count += 1) {
-        try file.writePositionalAll(io, test_string, count * test_string.len);
+        try file.writePositionalAll(io, &test_string, count * test_string.len);
     }
     const file_path = try directory.dir.realPathFileAlloc(io, filename, allocator);
     defer allocator.free(file_path);

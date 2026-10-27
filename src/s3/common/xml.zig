@@ -51,7 +51,7 @@ test "search xml" {
 
 test "search in large xml" {
     const allocator = std.testing.allocator;
-    const content = "lorem ipslum" ** 8096;
+    const content: [8096]u8 = @splat('A');
 
     const xml = try std.fmt.allocPrint(allocator, "<content>{s}</content>", .{content});
     defer allocator.free(xml);

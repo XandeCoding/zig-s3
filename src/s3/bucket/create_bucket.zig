@@ -272,6 +272,7 @@ test "create buckets with special characters" {
     defer test_client.deinit();
 
     // Test bucket names with various special characters
+    const long_name: [64]u8 = @splat('A');
     const test_cases = [_]struct {
         name: []const u8,
         should_succeed: bool,
@@ -288,7 +289,7 @@ test "create buckets with special characters" {
         .{ .name = "invalid-suffix-", .should_succeed = false },
         .{ .name = "a", .should_succeed = false }, // Too short
         .{ .name = "ab", .should_succeed = false }, // Too short
-        .{ .name = "a" ** 64, .should_succeed = false }, // Too long
+        .{ .name = &long_name, .should_succeed = false }, // Too long
     };
 
     for (test_cases) |case| {
@@ -339,13 +340,14 @@ test "create bucket name validation" {
     defer test_client.deinit();
 
     // Test various invalid bucket names
+    const long_name: [64]u8 = @splat('A');
     const invalid_names = [_][]const u8{
         "", // Empty
         "a", // Too short
         "ab", // Too short
         "ThisHasUpperCase", // Contains uppercase
         "contains_underscore", // Contains underscore
-        "a" ** 64, // Too long
+        &long_name, // Too long
     };
 
     for (invalid_names) |name| {

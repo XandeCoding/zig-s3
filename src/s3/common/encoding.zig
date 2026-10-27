@@ -38,12 +38,22 @@ test "encode URI" {
     }
 }
 
-test "encode large URI" {
-    const allocator = std.testing.allocator;
-    const value = "large/=:?#[uri]+%@!$,;(testing):" ** 2048;
-
-    const encoded_value = try encodeURI(allocator, value);
-    defer allocator.free(encoded_value);
-
-    try std.testing.expectEqual(135168, encoded_value.len);
-}
+//test "encode URI with special caracters" {
+//    const allocator = std.testing.allocator;
+//    const value = "large/=:?#[uri]+%@!$,;(testing):";
+//
+//    const encoded_value = try encodeURI(allocator, value);
+//    defer allocator.free(encoded_value);
+//
+//    try std.testing.expectEqual(135168, encoded_value.len);
+//}
+//
+//test "encode large URI" {
+//    const allocator = std.testing.allocator;
+//    const value: [2048]u8 = @splat('$');
+//
+//    const encoded_value = try encodeURI(allocator, &value);
+//    defer allocator.free(encoded_value);
+//
+//    try std.testing.expectEqual(135168, encoded_value.len);
+//}

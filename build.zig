@@ -43,9 +43,8 @@ pub fn build(b: *std.Build) void {
     // Create "run" step for the example
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
+
     const run_step = b.step("run", "Run the example application");
     run_step.dependOn(&run_cmd.step);
 
@@ -196,7 +195,6 @@ pub fn build(b: *std.Build) void {
         .{ .module = delete_object_module, .filters = &.{"delete_object"} },
         .{ .module = object_uploader_module, .filters = &.{"object_uploader"} },
     };
-    const test_runner = b.path("test_runner.zig");
     const test_step = b.step("test", "Run library tests");
 
     // Test flags
@@ -215,7 +213,6 @@ pub fn build(b: *std.Build) void {
 
         const unit_tests = b.addTest(.{
             .root_module = data.module,
-            .test_runner = .{ .path = test_runner, .mode = .simple },
             .filters = filters,
         });
         const run_unit_tests = b.addRunArtifact(unit_tests);
@@ -230,7 +227,6 @@ pub fn build(b: *std.Build) void {
     });
     const integration_tests = b.addTest(.{
         .root_module = integration_test_module,
-        .test_runner = .{ .path = test_runner, .mode = .simple },
         .filters = test_filters,
     });
     integration_tests.root_module.addImport("s3", s3_module);
@@ -244,7 +240,7 @@ pub fn build(b: *std.Build) void {
 
     // Add formatting
     const fmt = b.addFmt(.{
-        .paths = &.{ "src", "build.zig" },
+        .paths = &.{ b.path("src"), b.path("build.zig") },
         .check = true,
     });
 
