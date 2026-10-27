@@ -73,7 +73,7 @@ test "delete bucket operations error handling" {
     );
 }
 
-// TODO: CONSERTAR TESTE - AO ADICIONAR NOS TESTES DE INTEGRAĆAO CRIAR O BUCKET PRIMEIRO!
+// TODO: CONSERTAR TESTE - AO ADICIONAR NOS TESTES DE INTEGRACAO CRIAR O BUCKET PRIMEIRO!
 //test "bucket delete with custom endpoint" {
 //    const allocator = std.testing.allocator;
 //    const io = std.testing.io;
