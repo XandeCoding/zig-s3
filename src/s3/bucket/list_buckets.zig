@@ -83,6 +83,7 @@ pub fn listBuckets(self: *S3Client, options: ListBucketsOptions) ![]BucketInfo {
         const name = try xml.getByKey(self.allocator, bucket_xml, "Name");
         const date = try xml.getByKey(self.allocator, bucket_xml, "CreationDate");
 
+        // TODO: ANALISAR SE É NECESSÁRIO ALOCACAO DINAMICA
         try buckets.append(self.allocator, .{
             .name = name,
             .creation_date = date,
@@ -90,104 +91,6 @@ pub fn listBuckets(self: *S3Client, options: ListBucketsOptions) ![]BucketInfo {
     }
 
     return buckets.toOwnedSlice(self.allocator);
-}
-
-test "Before All - List Buckets" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
-
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
-
-    var threaded: std.Io.Threaded = .init(
-        allocator,
-        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
-    );
-    defer threaded.deinit();
-    var group: std.Io.Group = .init;
-    const io_threaded = threaded.io();
-
-    // Start up
-    for (buckets_name) |name| {
-        try group.concurrent(
-            io_threaded,
-            struct {
-                fn createBucketFn(client: *S3Client, bucket_name: []const u8) !void {
-                    _ = createBucket(client, .{ .bucket_name = bucket_name }) catch {};
-                }
-            }.createBucketFn,
-            .{ test_client, name },
-        );
-    }
-}
-test "list buckets" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
-
-    // List buckets
-    const buckets = try listBuckets(test_client, .{});
-    defer {
-        for (buckets) |bucket| {
-            allocator.free(bucket.name);
-            allocator.free(bucket.creation_date);
-        }
-        allocator.free(buckets);
-    }
-
-    // Verify buckets are listed
-    var found_1 = false;
-    var found_2 = false;
-    for (buckets) |bucket| {
-        if (std.mem.eql(u8, bucket.name, "test-bucket-1")) found_1 = true;
-        if (std.mem.eql(u8, bucket.name, "test-bucket-2")) found_2 = true;
-        try std.testing.expect(bucket.creation_date.len > 0);
-    }
-    try std.testing.expect(found_1);
-    try std.testing.expect(found_2);
-}
-
-test "list buckets with custom endpoint" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
-
-    // List buckets from custom endpoint
-    const buckets = try listBuckets(test_client, .{});
-    defer {
-        for (buckets) |bucket| {
-            allocator.free(bucket.name);
-            allocator.free(bucket.creation_date);
-        }
-        allocator.free(buckets);
-    }
-
-    // Just verify we can parse the response
-    for (buckets) |bucket| {
-        try std.testing.expect(bucket.name.len > 0);
-        try std.testing.expect(bucket.creation_date.len > 0);
-    }
 }
 
 test "list buckets error handling" {
@@ -207,40 +110,4 @@ test "list buckets error handling" {
         error.InvalidCredentials,
         listBuckets(test_client, .{}),
     );
-}
-
-test "After All - List Buckets" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
-
-    const buckets_name: [2][]const u8 = .{ "test-bucket-1", "test-bucket-2" };
-
-    var threaded: std.Io.Threaded = .init(
-        allocator,
-        .{ .async_limit = .unlimited, .concurrent_limit = .unlimited },
-    );
-    defer threaded.deinit();
-    var group: std.Io.Group = .init;
-    const io_threaded = threaded.io();
-
-    // Clean up
-    for (buckets_name) |name| {
-        try group.concurrent(
-            io_threaded,
-            struct {
-                fn deleteBucketFn(client: *S3Client, bucket_name: []const u8) !void {
-                    _ = deleteBucket(client, .{ .bucket_name = bucket_name }) catch {};
-                }
-            }.deleteBucketFn,
-            .{ test_client, name },
-        );
-    }
 }

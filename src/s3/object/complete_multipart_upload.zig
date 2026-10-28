@@ -6,18 +6,20 @@ const S3Client = client_impl.S3Client;
 const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
-pub const CompleteMultipartUploadOptions = struct {
+pub const CompleteMultipartUploadOptions = struct {};
+
+pub fn completeMultipartUpload(
+    self: *S3Client,
     bucket_name: []const u8,
     key: []const u8,
     upload_id: []const u8,
     e_tag_list: [][]const u8,
-};
-
-pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUploadOptions) !void {
+    _: CompleteMultipartUploadOptions,
+) !void {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploadId={s}",
-        .{ self.config.endpoint, options.bucket_name, options.key, options.upload_id },
+        .{ self.config.endpoint, bucket_name, key, upload_id },
     );
     defer self.allocator.free(uri);
 
@@ -27,7 +29,7 @@ pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUpload
     var part_number: u8 = 1;
     try out.writer.writeAll("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     try out.writer.writeAll("<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">");
-    for (options.e_tag_list) |e_tag| {
+    for (e_tag_list) |e_tag| {
         try out.writer.writeAll("<Part>");
         try out.writer.print("<PartNumber>{d}</PartNumber>", .{part_number});
         try out.writer.print("<ETag>{s}</ETag>", .{e_tag});
@@ -57,13 +59,13 @@ pub fn completeMultipartUpload(self: *S3Client, options: CompleteMultipartUpload
         return S3Error.InvalidResponse;
     }
 
-    const key = xml.getByKey(self.allocator, response, "Error") catch |err| {
+    const error_data = xml.getByKey(self.allocator, response, "Error") catch |err| {
         if (err != xml.XMLError.KeyNotFound) return S3Error.InvalidResponse;
         return;
     };
     defer self.allocator.free(key);
 
-    if (key.len > 0) {
+    if (error_data.len > 0) {
         return S3Error.InvalidResponse;
     }
 }

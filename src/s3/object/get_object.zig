@@ -6,10 +6,8 @@ const S3Error = @import("../common/errors.zig").S3Error;
 const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
 
-pub const GetObjectOptions = struct {
-    bucket_name: []const u8,
-    key: []const u8,
-};
+// TODO: ADD GET OPTIONS IN https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+pub const GetObjectOptions = struct {};
 
 /// Download an object from S3.
 ///
@@ -30,8 +28,8 @@ pub const GetObjectOptions = struct {
 ///   - InvalidResponse: If download fails
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
-pub fn getObject(self: *S3Client, options: GetObjectOptions) ![]const u8 {
-    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, options.bucket_name, options.key });
+pub fn getObject(self: *S3Client, bucket_name: []const u8, key: []const u8, _: GetObjectOptions) ![]const u8 {
+    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ self.config.endpoint, bucket_name, key });
     defer self.allocator.free(uri_str);
 
     var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 1024 * 1024);
@@ -65,6 +63,6 @@ test "get not existent object" {
     // Test object not found
     try std.testing.expectError(
         error.ObjectNotFound,
-        getObject(test_client, .{ .bucket_name = "test-bucket", .key = "nonexistent-key" }),
+        getObject(test_client, "test-bucket", "nonexistent-key", .{}),
     );
 }

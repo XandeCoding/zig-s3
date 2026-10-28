@@ -7,13 +7,10 @@ const S3Error = errors.S3Error;
 
 // TODO: ADD KEYMARKER OPTION TO PAGINATE
 pub const ListMultipartUploadOptions = struct {
-    bucket_name: []const u8,
-    key: []const u8,
-    upload_id: []const u8,
     max_parts: u8 = 100,
 };
 
-pub fn listMultipartUpload(self: *S3Client, options: ListMultipartUploadOptions) ![]const u8 {
+pub fn listMultipartUpload(self: *S3Client, bucket_name: []const u8, key: []const u8, upload_id: []const u8, options: ListMultipartUploadOptions) ![]const u8 {
     if (options.max_parts > 1000) {
         return S3Error.UnprocessableParameter;
     }
@@ -23,10 +20,10 @@ pub fn listMultipartUpload(self: *S3Client, options: ListMultipartUploadOptions)
         "{s}/{s}/{s}?max-parts={d}&uploadId={s}",
         .{
             self.config.endpoint,
-            options.bucket_name,
-            options.key,
+            bucket_name,
+            key,
             options.max_parts,
-            options.upload_id,
+            upload_id,
         },
     );
     defer self.allocator.free(uri);
@@ -46,6 +43,5 @@ pub fn listMultipartUpload(self: *S3Client, options: ListMultipartUploadOptions)
     }
 
     // TODO: IMPROVE THIS
-    const data = out.buffered();
-    return data;
+    return out.buffered();
 }

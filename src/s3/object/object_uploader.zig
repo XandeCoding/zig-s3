@@ -142,7 +142,10 @@ pub const ObjectUploader = struct {
         content: []const u8,
     ) !void {
         // String data is already in []const u8 format
-        try putObject(self.client, .{ .bucket_name = bucket_name, .key = key, .data = content });
+        try putObject(
+            self.client,
+            .{ .bucket_name = bucket_name, .key = key, .data = content },
+        );
     }
 
     /// Uploads JSON data to S3

@@ -221,7 +221,7 @@ pub fn build(b: *std.Build) void {
 
     // Integration tests
     const integration_test_module = b.createModule(.{
-        .root_source_file = b.path("tests/integration/s3_client_test.zig"),
+        .root_source_file = b.path("tests/integration/integration_test.zig"),
         .target = target,
         .optimize = optimize,
     });

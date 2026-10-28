@@ -5,17 +5,20 @@ const S3Client = client_impl.S3Client;
 const errors = @import("../common/errors.zig");
 const S3Error = errors.S3Error;
 
-pub const AbortMultipartUploadOptions = struct {
+// TODO: IMPLEMENT ANOTHER OPTIONS FROM AWS DOC
+pub const AbortMultipartUploadOptions = struct {};
+
+pub fn abortMultipartUpload(
+    self: *S3Client,
     bucket_name: []const u8,
     key: []const u8,
     upload_id: []const u8,
-};
-
-pub fn abortMultipartUpload(self: *S3Client, options: AbortMultipartUploadOptions) !void {
+    _: AbortMultipartUploadOptions,
+) !void {
     const uri = try std.fmt.allocPrint(
         self.allocator,
         "{s}/{s}/{s}?uploadId={s}",
-        .{ self.config.endpoint, options.bucket_name, options.key, options.upload_id },
+        .{ self.config.endpoint, bucket_name, key, upload_id },
     );
     defer self.allocator.free(uri);
     const req = try self.request(

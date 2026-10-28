@@ -9,7 +9,6 @@ const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 
 pub const DeleteBucketOptions = struct {
-    bucket_name: []const u8,
     expected_bucket_owner: ?[]const u8 = null,
 };
 
@@ -30,9 +29,16 @@ pub const DeleteBucketOptions = struct {
 ///   - BucketNotFound: If the bucket doesn't exist
 ///   - ConnectionFailed: Network or connection issues
 ///   - OutOfMemory: Memory allocation failure
-pub fn deleteBucket(self: *S3Client, options: DeleteBucketOptions) !void {
-    const bucket_name = options.bucket_name;
-    const uri_str = try fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.config.endpoint, bucket_name });
+pub fn deleteBucket(
+    self: *S3Client,
+    bucket_name: []const u8,
+    _: DeleteBucketOptions,
+) void {
+    const uri_str = try fmt.allocPrint(
+        self.allocator,
+        "{s}/{s}",
+        .{ self.config.endpoint, bucket_name },
+    );
     defer self.allocator.free(uri_str);
 
     const response = try self.request(.DELETE, try Uri.parse(uri_str), null, null);
@@ -72,20 +78,3 @@ test "delete bucket operations error handling" {
         deleteBucket(test_client, .{ .bucket_name = "nonexistent-bucket" }),
     );
 }
-
-// TODO: CONSERTAR TESTE - AO ADICIONAR NOS TESTES DE INTEGRACAO CRIAR O BUCKET PRIMEIRO!
-//test "bucket delete with custom endpoint" {
-//    const allocator = std.testing.allocator;
-//    const io = std.testing.io;
-//
-//    var test_client = try S3Client.init(allocator, io, client_impl.S3Config{
-//        .access_key_id = "admin",
-//        .secret_access_key = "admin",
-//        .region = "us-east-1",
-//        .endpoint = "http://localhost:9000",
-//    });
-//    defer test_client.deinit();
-//
-//    // Test bucket operations with custom endpoint
-//    try deleteBucket(test_client, .{ .bucket_name = "test-bucket-local" });
-//}
