@@ -172,6 +172,55 @@ test "full client lifecycle" {
     }
 }
 
+test "ObjectUploader using multipart file upload" {
+    var test_client = try S3Client.init(allocator, io, .{
+        .access_key_id = "admin",
+        .secret_access_key = "admin",
+        .region = "us-east-1",
+        .endpoint = "http://localhost:9000",
+    });
+    defer test_client.deinit();
+
+    // Create test bucket
+    const bucket_name = "test-uploader";
+
+    var uploader = ObjectUploader.init(test_client, .{});
+
+    // Test string upload
+    const test_string: [1024 * 100]u8 = @splat('A');
+    // Create temporary directory for test files
+    var directory = std.testing.tmpDir(.{});
+    defer directory.cleanup();
+
+    const filename = "multipart_file.txt";
+    const file = try directory.dir.createFile(io, filename, .{ .read = true });
+    defer file.close(io);
+
+    var count: u8 = 0;
+    const max = 50;
+    while (count < max) : (count += 1) {
+        try file.writePositionalAll(io, &test_string, count * test_string.len);
+    }
+    const file_path = try directory.dir.realPathFileAlloc(io, filename, allocator);
+    defer allocator.free(file_path);
+
+    try uploader.uploadFile("test-uploader", "multipart_file.txt", file_path);
+
+    const retrieved_file = try getObject(test_client, .{ .bucket_name = bucket_name, .key = filename });
+    defer allocator.free(retrieved_file);
+
+    try std.testing.expectEqual(test_string.len * max, retrieved_file.len);
+
+    var out_size: usize = 1;
+    var offset: usize = 0;
+    var upload_buffer: [1024 * 1024]u8 = undefined;
+
+    while (out_size != 0) : (offset += out_size) {
+        out_size = try file.readPositionalAll(io, &upload_buffer, offset);
+        try std.testing.expectEqualStrings(upload_buffer[0..out_size], retrieved_file[offset .. offset + out_size]);
+    }
+}
+
 test "file upload and download" {
     // Initialize client
     const config = try createS3ClientConfig();

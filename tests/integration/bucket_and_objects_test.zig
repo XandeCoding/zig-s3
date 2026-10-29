@@ -65,9 +65,8 @@ test "create simple bucket" {
     defer client.deinit();
     const bucket_name = "integration-test-bucket-123";
 
-    try client.createBucket(.{ .bucket_name = bucket_name });
-    // Clean up by deleting the bucket
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Verify the bucket exists by listing buckets
     const buckets = try client.listBuckets(.{});
@@ -97,8 +96,8 @@ test "bucket operations with custom endpoint" {
 
     // Test bucket operations with custom endpoint
     const bucket_name = "test-bucket-local";
-    try client.createBucket(.{ .bucket_name = bucket_name });
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 }
 
 test "create buckets with special characters" {
@@ -115,7 +114,7 @@ test "create buckets with special characters" {
     };
 
     for (test_cases) |name| {
-        try client.createBucket(.{ .bucket_name = name });
+        try client.createBucket(name, .{});
     }
     defer {
         var threaded: std.Io.Threaded = .init(
@@ -135,9 +134,7 @@ test "create buckets with special characters" {
                         delete_client: *s3.S3Client,
                         delete_bucket_name: []const u8,
                     ) !void {
-                        _ = delete_client.deleteBucket(.{
-                            .bucket_name = delete_bucket_name,
-                        }) catch {};
+                        _ = delete_client.deleteBucket(delete_bucket_name, .{}) catch {};
                     }
                 }.deleteBucketFn,
                 .{ &client, name },
@@ -171,19 +168,14 @@ test "create buckets with special characters" {
 }
 
 test "list objects basic" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     // Create test bucket and objects
     const bucket_name = "test-list-objects";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "test1.txt", .content = "Hello 1" },
@@ -191,8 +183,12 @@ test "list objects basic" {
         .{ .key = "folder/test3.txt", .content = "Hello 3" },
     };
 
+    for (test_objects) |object| {
+        try client.putObject(bucket_name, object.key, object.content, .{});
+    }
+
     // List all objects
-    const objects = try listObjects(test_client, .{ .bucket_name = bucket_name });
+    const objects = try client.listObjects(bucket_name, .{});
     defer {
         for (objects) |object| {
             allocator.free(object.key);
@@ -219,31 +215,41 @@ test "list objects basic" {
 }
 
 test "list objects empty bucket" {
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     // List objects in empty bucket
-    const objects = try listObjects(test_client, .{ .bucket_name = "test-empty-bucket" });
+    const bucket_name = "test-empty-bucket";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
+
+    const objects = try client.listObjects(bucket_name, .{});
     defer allocator.free(objects);
 
     try std.testing.expectEqual(@as(usize, 0), objects.len);
 }
 
 test "list objects with multiple prefixes" {
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     const bucket_name = "test-prefix-bucket";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
+    const test_objects = [_]struct { key: []const u8, content: []const u8 }{
+        .{ .key = "folder1/a.txt", .content = "Hello 1" },
+        .{ .key = "folder1/b.txt", .content = "Hello 2" },
+        .{ .key = "folder2/c.txt", .content = "Hello 3" },
+        .{ .key = "folder2/subfolder/d.txt", .content = "Hello 4" },
+        .{ .key = "folder3/e.txt", .content = "Hello 5" },
+        .{ .key = "root.txt", .content = "Hello 6" },
+    };
+    
+    for (test_objects) |object| {
+        try client.putObject(bucket_name, object.key, object.content, .{});
+    }
 
     // Test different prefix scenarios
     const test_cases = [_]struct {
@@ -259,12 +265,10 @@ test "list objects with multiple prefixes" {
     };
 
     for (test_cases) |case| {
-        const objects = try listObjects(test_client, .{
-            .bucket_name = bucket_name,
-            .prefix = case.prefix,
-        });
+        const objects = try client.listObjects(bucket_name, .{ .prefix = case.prefix });
         defer {
             for (objects) |object| {
+                _= client.deleteObject(bucket_name, object.key, .{}) catch {};
                 allocator.free(object.key);
                 allocator.free(object.last_modified);
                 allocator.free(object.etag);
@@ -284,21 +288,21 @@ test "list objects with multiple prefixes" {
 }
 
 test "list objects pagination with various sizes" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     const bucket_name = "test-pagination-bucket";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Create 25 test objects
     const total_objects = 25;
+    for (1 .. 25) |index| {
+        const key = try std.fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{index});
+        defer allocator.free(key);
+        try client.putObject(bucket_name, key, "Hello Test", .{});
+    }
 
     // Test different page sizes
     const page_sizes = [_]u32{ 5, 10, 15 };
@@ -315,11 +319,10 @@ test "list objects pagination with various sizes" {
         var attempts: u8 = 10;
         while (attempts > 0) {
             attempts = attempts - 1;
-            const page = try listObjects(test_client, .{
-                .bucket_name = bucket_name,
-                .max_keys = page_size,
-                .start_after = last_key,
-            });
+            const page = try client.listObjects(
+                bucket_name,
+                .{ .max_keys = page_size, .start_after = last_key },
+            );
             defer {
                 for (page) |object| {
                     allocator.free(object.last_modified);
@@ -352,26 +355,24 @@ test "list objects pagination with various sizes" {
         // Verify we got all objects and they're in order
         try std.testing.expectEqual(@as(usize, total_objects), collected_objects.items.len);
         for (collected_objects.items, 0..) |key, idx| {
-            const expected = try fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{idx});
-            defer allocator.free(expected);
+            const expected = try std.fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{idx});
+            defer {
+                _ = client.deleteObject(bucket_name, expected, .{}) catch {};
+                allocator.free(expected);
+            }
             try std.testing.expectEqualStrings(expected, key);
         }
     }
 }
 
 test "list objects with special characters in prefix" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     const bucket_name = "test-special-chars";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Objects with special characters in paths
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
@@ -384,13 +385,14 @@ test "list objects with special characters in prefix" {
         .{ .key = "special+chars/test7.txt", .content = "7" },
     };
 
+    for (test_objects) |object| {
+        try client.putObject(bucket_name, object.key, object.content, .{});
+    }
+
     // Test listing with various special character prefixes
     for (test_objects) |obj| {
         const prefix = obj.key[0 .. std.mem.indexOf(u8, obj.key, "/").? + 1];
-        const objects = try listObjects(test_client, .{
-            .bucket_name = bucket_name,
-            .prefix = prefix,
-        });
+        const objects = try client.listObjects(bucket_name, .{ .prefix = prefix });
         defer {
             for (objects) |object| {
                 allocator.free(object.key);
@@ -411,8 +413,8 @@ test "pagination and prefixes" {
     defer client.deinit();
 
     const bucket_name = "pagination-test-bucket";
-    client.createBucket(.{ .bucket_name = bucket_name }) catch {};
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Create test objects with different prefixes
     const prefixes = [_][]const u8{ "folder1/", "folder2/", "folder3/" };
@@ -433,7 +435,7 @@ test "pagination and prefixes" {
                 .{i},
             );
             defer allocator.free(content);
-            try client.putObject(.{ .bucket_name = bucket_name, .key = key, .data = content });
+            try client.putObject(bucket_name, key, content, .{});
             total_objects += 1;
         }
     }
@@ -452,8 +454,7 @@ test "pagination and prefixes" {
         var max_attempts: u16 = 10;
         while (max_attempts > 0) {
             max_attempts = max_attempts - 1;
-            const page = try client.listObjects(.{
-                .bucket_name = bucket_name,
+            const page = try client.listObjects(bucket_name, .{
                 .max_keys = page_size,
                 .start_after = all_objects.getLastOrNull(),
             });
@@ -481,8 +482,7 @@ test "pagination and prefixes" {
 
     // Test listing with prefix
     for (prefixes) |prefix| {
-        const objects = try client.listObjects(.{
-            .bucket_name = bucket_name,
+        const objects = try client.listObjects(bucket_name, .{
             .prefix = prefix,
         });
         defer {
@@ -504,10 +504,7 @@ test "pagination and prefixes" {
                             delete_bucket_name: []const u8,
                             key: []const u8,
                         ) !void {
-                            _ = delete_client.deleteObject(.{
-                                .bucket_name = delete_bucket_name,
-                                .key = key,
-                            }) catch {};
+                            _ = delete_client.deleteObject(delete_bucket_name, key, .{}) catch {};
                         }
                     }.deleteObjectFn,
                     .{ &client, bucket_name, obj.key },
@@ -546,13 +543,13 @@ test "put large object" {
         large_data[i] = @as(u8, @truncate(i));
     }
     const bucket_name = "large-data-test";
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Test large object operations
-    try client.putObject(bucket_name, "large-file.bin", large_data);
+    try client.putObject(bucket_name, "large-file.bin", large_data, .{});
 
-    const retrieved = try getObject(test_client, .{ .bucket_name = bucket_name, .key = "large-file.bin" });
+    const retrieved = try client.getObject(bucket_name, "large-file.bin", .{});
     defer allocator.free(retrieved);
 
     try std.testing.expectEqualSlices(u8, large_data, retrieved);
@@ -565,8 +562,8 @@ test "put objects with valid keys" {
     defer client.deinit();
 
     const bucket_name = "object-valid-name-bucket";
-    try client.createBucket(bucket_name);
-    defer _ = client.deleteBucket(bucket_name) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Test valid object keys
     const valid_keys = [_][]const u8{
@@ -577,16 +574,9 @@ test "put objects with valid keys" {
 
     for (valid_keys) |key| {
         const test_data = "Test data";
-        try putObject(test_client, .{
-            .bucket_name = bucket_name,
-            .key = key,
-            .data = test_data,
-        });
+        try client.putObject(bucket_name, key, test_data, .{});
 
-        const retrieved = try getObject(
-            test_client,
-            .{ .bucket_name = bucket_name, .key = key },
-        );
+        const retrieved = try client.getObject(bucket_name, key, .{});
         defer allocator.free(retrieved);
 
         try std.testing.expectEqualStrings(test_data, retrieved);

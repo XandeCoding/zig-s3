@@ -33,7 +33,7 @@ pub fn deleteBucket(
     self: *S3Client,
     bucket_name: []const u8,
     _: DeleteBucketOptions,
-) void {
+) !void {
     const uri_str = try fmt.allocPrint(
         self.allocator,
         "{s}/{s}",

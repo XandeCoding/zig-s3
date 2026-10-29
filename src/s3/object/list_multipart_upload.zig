@@ -10,7 +10,13 @@ pub const ListMultipartUploadOptions = struct {
     max_parts: u8 = 100,
 };
 
-pub fn listMultipartUpload(self: *S3Client, bucket_name: []const u8, key: []const u8, upload_id: []const u8, options: ListMultipartUploadOptions) ![]const u8 {
+pub fn listMultipartUpload(
+    self: *S3Client,
+    bucket_name: []const u8,
+    key: []const u8,
+    upload_id: []const u8,
+    options: ListMultipartUploadOptions,
+) ![]const u8 {
     if (options.max_parts > 1000) {
         return S3Error.UnprocessableParameter;
     }

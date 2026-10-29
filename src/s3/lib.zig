@@ -22,9 +22,20 @@
 //! ```
 const std = @import("std");
 const client = @import("client/implementation.zig");
-const bucket_lib = @import("bucket/lib.zig");
-const object_lib = @import("object/lib.zig");
 const errors = @import("common/errors.zig");
+const object_uploader = @import("object/object_uploader.zig");
+const list_buckets = @import("bucket/list_buckets.zig");
+const create_bucket = @import("bucket/create_bucket.zig");
+const delete_bucket = @import("bucket/delete_bucket.zig");
+const put_object = @import("object/put_object.zig");
+const get_object = @import("object/get_object.zig");
+const delete_object = @import("object/delete_object.zig");
+const list_objects = @import("object/list_objects.zig");
+const create_multipart_object = @import("object/create_multipart_upload.zig");
+const list_multipart_object = @import("object/list_multipart_upload.zig");
+const abort_multipart_object = @import("object/abort_multipart_upload.zig");
+const put_multipart_object = @import("object/put_multipart_object.zig");
+const complete_multipart_object = @import("object/complete_multipart_upload.zig");
 
 /// Configuration for the S3 client handler.
 /// This includes AWS credentials and regional settings.
@@ -45,16 +56,22 @@ pub const S3Error = errors.S3Error;
 pub const S3Config = client.S3Config;
 
 /// Information about a bucket in S3
-pub const BucketInfo = bucket_lib.BucketInfo;
+pub const BucketInfo = list_buckets.BucketInfo;
 
 /// Information about an object in S3
-pub const ObjectInfo = object_lib.ObjectInfo;
+pub const ObjectInfo = list_objects.ObjectInfo;
 
 /// Options for listing objects in a bucket
-pub const ListObjectsOptions = object_lib.ListObjectsOptions;
+pub const ListObjectsOptions = list_objects.ListObjectsOptions;
 
 /// Helper struct for uploading different types of content to S3
-pub const ObjectUploader = object_lib.ObjectUploader;
+pub const ObjectUploader = object_uploader.ObjectUploader;
+
+/// Options to create the helper struct to upload objects
+pub const ObjectUploaderOptions = object_uploader.ObjectUploaderOptions;
+
+/// Options to list multipart upload parts
+pub const ListMultipartUploadOptions = list_multipart_object.ListMultipartUploadOptions;
 
 /// Main client interface that provides S3 operations.
 /// This struct wraps the internal implementation and provides a clean public API.
@@ -103,89 +120,146 @@ pub const S3Client = struct {
     }
 
     /// Create a new bucket.
-    /// See bucket/operations.zig for details.
-    pub fn createBucket(self: *S3Client, options: bucket_lib.createBucketOptions) !void {
-        return bucket_lib.createBucket(self.inner, options);
+    /// See bucket/create_bucket.zig for details.
+    pub fn createBucket(self: *S3Client, bucket_name: []const u8, options: create_bucket.CreateBucketOptions) !void {
+        return create_bucket.createBucket(self.inner, bucket_name, options);
     }
 
     /// Delete an existing bucket.
-    /// See bucket/operations.zig for details.
-    pub fn deleteBucket(self: *S3Client, options: bucket_lib.deleteBucketOptions) !void {
-        return bucket_lib.deleteBucket(self.inner, options);
+    /// See bucket/delete_bucket.zig for details.
+    pub fn deleteBucket(self: *S3Client, bucket_name: []const u8, options: delete_bucket.DeleteBucketOptions) !void {
+        return delete_bucket.deleteBucket(self.inner, bucket_name, options);
     }
 
     /// List all buckets owned by the authenticated user.
-    /// Memory for the returned slice and its contents must be freed by the caller.
-    ///
-    /// Returns: Slice of BucketInfo structs
-    ///
-    /// Errors:
-    ///     InvalidCredentials: If authentication fails
-    ///     InvalidResponse: If listing fails
-    ///     ConnectionFailed: Network or connection issues
-    ///     OutOfMemory: Memory allocation failure
-    pub fn listBuckets(self: *S3Client, options: bucket_lib.listBucketsOptions) ![]BucketInfo {
-        return bucket_lib.listBuckets(self.inner, options);
+    /// See bucket/delete_bucket.zig for details.
+    pub fn listBuckets(self: *S3Client, options: list_buckets.ListBucketsOptions) ![]BucketInfo {
+        return list_buckets.listBuckets(self.inner, options);
     }
 
     /// Upload an object to S3.
-    /// See object/operations.zig for details.
-    pub fn putObject(self: *S3Client, options: object_lib.PutObjectOptions) !void {
-        return object_lib.putObject(self.inner, options);
+    /// See object/put_object.zig for details.
+    pub fn putObject(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        data: []const u8,
+        options: put_object.PutObjectOptions,
+    ) !void {
+        return put_object.putObject(self.inner, bucket_name, key, data, options);
     }
 
     /// Download an object from S3.
-    /// See object/operations.zig for details.
-    pub fn getObject(self: *S3Client, options: object_lib.GetObjectOptions) ![]const u8 {
-        return object_lib.getObject(self.inner, options);
+    /// See object/get_object.zig for details.
+    pub fn getObject(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        options: get_object.GetObjectOptions,
+    ) ![]const u8 {
+        return get_object.getObject(self.inner, bucket_name, key, options);
     }
 
     /// Delete an object from S3.
-    /// See object/operations.zig for details.
-    pub fn deleteObject(self: *S3Client, options: object_lib.DeleteObjectOptions) !void {
-        return object_lib.deleteObject(self.inner, options);
+    /// See object/delete_object.zig for details.
+    pub fn deleteObject(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        options: delete_object.DeleteObjectOptions,
+    ) !void {
+        return delete_object.deleteObject(self.inner, bucket_name, key, options);
     }
 
     /// List objects in a bucket with optional filtering and pagination.
-    /// Memory for the returned slice and its contents must be freed by the caller.
-    ///
-    /// Arguments:
-    ///     bucket_name: Name of the bucket to list
-    ///     options: Optional parameters for filtering and pagination
-    ///
-    /// Returns: Slice of ObjectInfo structs
-    ///
-    /// Errors:
-    ///     BucketNotFound: If the bucket doesn't exist
-    ///     InvalidResponse: If listing fails
-    ///     ConnectionFailed: Network or connection issues
-    ///     OutOfMemory: Memory allocation failure
-    pub fn listObjects(self: *S3Client, options: object_lib.ListObjectsOptions) ![]ObjectInfo {
-        return object_lib.listObjects(self.inner, options);
+    /// See object/list_objects.zig for details.
+    pub fn listObjects(
+        self: *S3Client,
+        bucket_name: []const u8,
+        options: list_objects.ListObjectsOptions,
+    ) ![]ObjectInfo {
+        return list_objects.listObjects(self.inner, bucket_name, options);
     }
 
-    pub fn createMultipartUpload(self: *S3Client, options: object_lib.CreateMultipartOptions) ![]const u8 {
-        return object_lib.createMultipartUpload(self.inner, options);
+    /// Create multipart upload
+    /// See object/create_multipart_upload.zig for details
+    pub fn createMultipartUpload(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        options: create_multipart_object.CreateMultipartUploadOptions,
+    ) ![]const u8 {
+        return create_multipart_object.createMultipartUpload(self.inner, bucket_name, key, options);
     }
 
-    pub fn listMultipartUpload(self: *S3Client, options: object_lib.ListMultipartUploadOptions) ![]const u8 {
-        return object_lib.listMultipartUpload(self.inner, options);
+    /// List multipart upload parts already uploaded
+    /// See object/list_multipart_upload.zig for details
+    pub fn listMultipartUpload(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        upload_id: []const u8,
+        options: list_multipart_object.ListMultipartUploadOptions,
+    ) ![]const u8 {
+        return list_multipart_object.listMultipartUpload(self.inner, bucket_name, key, upload_id, options);
     }
 
-    pub fn abortMultipartUpload(self: *S3Client, options: object_lib.AbortMultipartUploadOptions) !void {
-        return object_lib.abortMultipartUpload(self.inner, options);
+    /// Abort a multipart upload process
+    /// See object/abort_multipart_upload.zig for details
+    pub fn abortMultipartUpload(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        upload_id: []const u8,
+        options: abort_multipart_object.AbortMultipartUploadOptions,
+    ) !void {
+        return abort_multipart_object.abortMultipartUpload(self.inner, bucket_name, key, upload_id, options);
     }
 
-    pub fn putMultipartUpload(self: *S3Client, options: object_lib.PutMultipartUploadOptions) ![]const u8 {
-        return object_lib.putMultipartUpload(self.inner, options);
+    /// Put a multipart upload part
+    /// See object/put_multipart_upload.zig for details
+    pub fn putMultipartUpload(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        upload_id: []const u8,
+        part_number: u8,
+        data: []const u8,
+        options: put_multipart_object.PutMultipartUploadOptions,
+    ) ![]const u8 {
+        return put_multipart_object.putMultipartUpload(
+            self.inner,
+            bucket_name,
+            key,
+            upload_id,
+            part_number,
+            data,
+            options,
+        );
     }
 
-    pub fn completeMultipartUpload(self: *S3Client, options: object_lib.CompleteMultipartUploadOptions) !void {
-        return object_lib.completeMultipartUpload(self.inner, options);
+    /// Complete the multipart upload part
+    /// See object/complete_multipart_upload.zig
+    pub fn completeMultipartUpload(
+        self: *S3Client,
+        bucket_name: []const u8,
+        key: []const u8,
+        upload_id: []const u8,
+        e_tag_list: [][]const u8,
+        options: complete_multipart_object.CompleteMultipartUploadOptions,
+    ) !void {
+        return complete_multipart_object.completeMultipartUpload(
+            self.inner,
+            bucket_name,
+            key,
+            upload_id,
+            e_tag_list,
+            options,
+        );
     }
 
     /// Create an object uploader helper for this client
-    pub fn uploader(self: *S3Client, options: object_lib.ObjectUploaderOptions) ObjectUploader {
+    pub fn uploader(self: *S3Client, options: object_uploader.ObjectUploaderOptions) ObjectUploader {
         return ObjectUploader.init(self.inner, options);
     }
 };

@@ -9,8 +9,6 @@ const client_impl = @import("../client/implementation.zig");
 const S3Error = @import("../common/errors.zig").S3Error;
 const S3Client = client_impl.S3Client;
 const xml = @import("../common/xml.zig");
-const createBucket = @import("create_bucket.zig").createBucket;
-const deleteBucket = @import("delete_bucket.zig").deleteBucket;
 
 pub const ListBucketsOptions = struct {
     continuation_token: ?[]const u8 = null,
@@ -50,7 +48,12 @@ pub fn listBuckets(self: *S3Client, options: ListBucketsOptions) ![]BucketInfo {
     var alloc_writer = try Writer.Allocating.initCapacity(self.allocator, 4096);
     defer alloc_writer.deinit();
 
-    const response = try self.request(.GET, try Uri.parse(self.config.endpoint), &alloc_writer.writer, null);
+    const response = try self.request(
+        .GET,
+        try Uri.parse(self.config.endpoint),
+        &alloc_writer.writer,
+        null,
+    );
     switch (response.status) {
         .ok => {},
         .unauthorized, .forbidden => {

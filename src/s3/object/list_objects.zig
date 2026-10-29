@@ -9,8 +9,6 @@ const client_impl = @import("../client/implementation.zig");
 const S3Client = client_impl.S3Client;
 const putObject = @import("put_object.zig").putObject;
 const deleteObject = @import("delete_object.zig").deleteObject;
-const createBucket = @import("../bucket/lib.zig").createBucket;
-const deleteBucket = @import("../bucket/lib.zig").deleteBucket;
 
 /// Object information returned by listObjects
 pub const ObjectInfo = struct {
