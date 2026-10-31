@@ -45,6 +45,9 @@ pub fn putMultipartObject(
     if (req.status != .ok) {
         return error.InvalidResponse;
     }
+    if (req.headers.e_tag != null and req.headers.e_tag.?.len == 0) {
+        return error.InvalidResponse;
+    }
 
-    return if (req.headers.e_tag != null and req.headers.e_tag.?.len == 0) req.header.e_tag else error.InvalidResponse;
+    return req.headers.e_tag orelse "";
 }

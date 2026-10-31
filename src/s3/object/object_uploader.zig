@@ -58,28 +58,17 @@ pub const ObjectUploader = struct {
             }
 
             // Upload the binary data
-            try putObject(self.client, .{
-                .bucket_name = bucket_name,
-                .key = key,
-                .data = buffer,
-            });
+            try putObject(self.client, bucket_name, key, buffer, .{});
             return;
         }
 
         // create multipart upload to get the upload id
-        const upload_id = try createMultipartUpload(self.client, .{
-            .bucket_name = bucket_name,
-            .key = key,
-        });
+        const upload_id = try createMultipartUpload(self.client, bucket_name, key, .{});
         defer self.client.allocator.free(upload_id);
 
         // abort in case of error
         errdefer {
-            _ = abortMultipartUpload(self.client, .{
-                .bucket_name = bucket_name,
-                .key = key,
-                .upload_id = upload_id,
-            }) catch {};
+            _ = abortMultipartUpload(self.client, bucket_name, key, upload_id, .{}) catch {};
         }
 
         // Creating buffer
@@ -110,23 +99,27 @@ pub const ObjectUploader = struct {
 
             offset += out_size;
 
-            const etag = try putMultipartObject(self.client, .{
-                .bucket_name = bucket_name,
-                .key = key,
-                .upload_id = upload_id,
-                .part_number = part_number,
-                .data = upload_buffer[0..out_size],
-            });
+            const etag = try putMultipartObject(
+                self.client,
+                bucket_name,
+                key,
+                upload_id,
+                part_number,
+                upload_buffer[0..out_size],
+                .{},
+            );
 
             try e_tag_list.append(self.client.allocator, etag);
         }
 
-        try completeMultipartUpload(self.client, .{
-            .bucket_name = bucket_name,
-            .key = key,
-            .upload_id = upload_id,
-            .e_tag_list = e_tag_list.items,
-        });
+        try completeMultipartUpload(
+            self.client,
+            bucket_name,
+            key,
+            upload_id,
+            e_tag_list.items,
+            .{},
+        );
     }
 
     /// Uploads string data to S3
@@ -140,7 +133,10 @@ pub const ObjectUploader = struct {
         // String data is already in []const u8 format
         try putObject(
             self.client,
-            .{ .bucket_name = bucket_name, .key = key, .data = content },
+            bucket_name,
+            key,
+            content,
+            .{},
         );
     }
 
@@ -161,7 +157,7 @@ pub const ObjectUploader = struct {
         const data_raw = out.written();
 
         // Upload the JSON data
-        try putObject(self.client, .{ .bucket_name = bucket_name, .key = key, .data = data_raw });
+        try putObject(self.client, bucket_name, key, data_raw, .{});
     }
 };
 

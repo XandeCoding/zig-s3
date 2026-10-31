@@ -238,6 +238,7 @@ test "list objects with multiple prefixes" {
     const bucket_name = "test-prefix-bucket";
     try client.createBucket(bucket_name, .{});
     defer _ = client.deleteBucket(bucket_name, .{}) catch {};
+
     const test_objects = [_]struct { key: []const u8, content: []const u8 }{
         .{ .key = "folder1/a.txt", .content = "Hello 1" },
         .{ .key = "folder1/b.txt", .content = "Hello 2" },
@@ -246,7 +247,12 @@ test "list objects with multiple prefixes" {
         .{ .key = "folder3/e.txt", .content = "Hello 5" },
         .{ .key = "root.txt", .content = "Hello 6" },
     };
-    
+    defer {
+        for (test_objects) |object| {
+            _ = client.deleteObject(bucket_name, object.key, .{}) catch {};
+        }
+    }
+
     for (test_objects) |object| {
         try client.putObject(bucket_name, object.key, object.content, .{});
     }
@@ -268,7 +274,6 @@ test "list objects with multiple prefixes" {
         const objects = try client.listObjects(bucket_name, .{ .prefix = case.prefix });
         defer {
             for (objects) |object| {
-                _= client.deleteObject(bucket_name, object.key, .{}) catch {};
                 allocator.free(object.key);
                 allocator.free(object.last_modified);
                 allocator.free(object.etag);
@@ -298,10 +303,17 @@ test "list objects pagination with various sizes" {
 
     // Create 25 test objects
     const total_objects = 25;
-    for (1 .. 25) |index| {
+    var object_names: [25][]u8 = undefined;
+    for (0..total_objects) |index| {
         const key = try std.fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{index});
-        defer allocator.free(key);
+        object_names[index] = key;
         try client.putObject(bucket_name, key, "Hello Test", .{});
+    }
+    defer {
+        for (object_names) |key| {
+            _ = client.deleteObject(bucket_name, key, .{}) catch {};
+            allocator.free(key);
+        }
     }
 
     // Test different page sizes
@@ -355,12 +367,7 @@ test "list objects pagination with various sizes" {
         // Verify we got all objects and they're in order
         try std.testing.expectEqual(@as(usize, total_objects), collected_objects.items.len);
         for (collected_objects.items, 0..) |key, idx| {
-            const expected = try std.fmt.allocPrint(allocator, "obj{d:0>3}.txt", .{idx});
-            defer {
-                _ = client.deleteObject(bucket_name, expected, .{}) catch {};
-                allocator.free(expected);
-            }
-            try std.testing.expectEqualStrings(expected, key);
+            try std.testing.expectEqualStrings(object_names[idx], key);
         }
     }
 }

@@ -24,8 +24,8 @@ test "upload simple string" {
     const file_key = "hello.txt";
 
     // Create bucket just to insure the upload will be successfull
-    try client.createBucket(.{ .bucket_name = bucket_name });
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // Create uploader and upload string
     var uploader = client.uploader(.{});
@@ -33,10 +33,10 @@ test "upload simple string" {
         std.debug.print("Failed to upload file: {any}\n", .{err});
         return err;
     };
-    defer _ = client.deleteObject(.{ .bucket_name = bucket_name, .key = file_key }) catch {};
+    defer _ = client.deleteObject(bucket_name, file_key, .{}) catch {};
 
     // Verify the upload by downloading the content
-    const downloaded = client.getObject(.{ .bucket_name = bucket_name, .key = file_key }) catch |err| {
+    const downloaded = client.getObject(bucket_name, file_key, .{}) catch |err| {
         std.debug.print("Failed to download file: {any}\n", .{err});
         return err;
     };
@@ -45,17 +45,15 @@ test "upload simple string" {
     try testing.expectEqualStrings(file_content, downloaded);
 }
 
-// TODO: REFACT TO CREATE AND CHECK LATER
 test "full client lifecycle" {
-    // Initialize client
     const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
     // Create test bucket
     const bucket_name = "integration-test-bucket";
-    try client.createBucket(.{ .bucket_name = bucket_name });
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     // List buckets and verify our bucket exists
     const buckets = try client.listBuckets(.{});
@@ -115,7 +113,7 @@ test "full client lifecycle" {
         try uploader.uploadFile(bucket_name, "files/test.dat", file_path);
 
         // List objects and verify
-        const objects = try client.listObjects(.{ .bucket_name = bucket_name });
+        const objects = try client.listObjects(bucket_name, .{});
         defer {
             for (objects) |object| {
                 allocator.free(object.key);
@@ -128,14 +126,11 @@ test "full client lifecycle" {
         try testing.expectEqual(3, objects.len);
 
         // Download and verify content
-        const hello_content = try client.getObject(.{
-            .bucket_name = bucket_name,
-            .key = "hello.txt",
-        });
+        const hello_content = try client.getObject(bucket_name, "hello.txt", .{});
         defer allocator.free(hello_content);
         try testing.expectEqualStrings("Hello, Integration Tests!", hello_content);
 
-        const config_content = try client.getObject(.{ .bucket_name = bucket_name, .key = "config.json" });
+        const config_content = try client.getObject(bucket_name, "config.json", .{});
         defer allocator.free(config_content);
 
         // Parse and verify JSON
@@ -151,15 +146,12 @@ test "full client lifecycle" {
         try testing.expectEqualStrings("1.0.0", parsed.value.version);
 
         // Test object deletion
-        try client.deleteObject(.{
-            .bucket_name = bucket_name,
-            .key = "hello.txt",
-        });
-        try client.deleteObject(.{ .bucket_name = bucket_name, .key = "config.json" });
-        try client.deleteObject(.{ .bucket_name = bucket_name, .key = "files/test.dat" });
+        try client.deleteObject(bucket_name, "hello.txt", .{});
+        try client.deleteObject(bucket_name, "config.json", .{});
+        try client.deleteObject(bucket_name, "files/test.dat", .{});
 
         // Verify objects are gone
-        const remaining_objects = try client.listObjects(.{ .bucket_name = bucket_name });
+        const remaining_objects = try client.listObjects(bucket_name, .{});
         defer {
             for (remaining_objects) |object| {
                 allocator.free(object.key);
@@ -173,18 +165,14 @@ test "full client lifecycle" {
 }
 
 test "ObjectUploader using multipart file upload" {
-    var test_client = try S3Client.init(allocator, io, .{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-east-1",
-        .endpoint = "http://localhost:9000",
-    });
-    defer test_client.deinit();
+    const config = try createS3ClientConfig();
+    var client = try s3.S3Client.init(allocator, io, config);
+    defer client.deinit();
 
     // Create test bucket
     const bucket_name = "test-uploader";
 
-    var uploader = ObjectUploader.init(test_client, .{});
+    var uploader = client.uploader(.{});
 
     // Test string upload
     const test_string: [1024 * 100]u8 = @splat('A');
@@ -206,7 +194,7 @@ test "ObjectUploader using multipart file upload" {
 
     try uploader.uploadFile("test-uploader", "multipart_file.txt", file_path);
 
-    const retrieved_file = try getObject(test_client, .{ .bucket_name = bucket_name, .key = filename });
+    const retrieved_file = try client.getObject(bucket_name, filename, .{});
     defer allocator.free(retrieved_file);
 
     try std.testing.expectEqual(test_string.len * max, retrieved_file.len);
@@ -217,30 +205,36 @@ test "ObjectUploader using multipart file upload" {
 
     while (out_size != 0) : (offset += out_size) {
         out_size = try file.readPositionalAll(io, &upload_buffer, offset);
-        try std.testing.expectEqualStrings(upload_buffer[0..out_size], retrieved_file[offset .. offset + out_size]);
+        try std.testing.expectEqualStrings(
+            upload_buffer[0..out_size],
+            retrieved_file[offset .. offset + out_size],
+        );
     }
 }
 
 test "file upload and download" {
-    // Initialize client
     const config = try createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
     // Setup test bucket
     const bucket_name = "file-upload-test-bucket";
-    try client.createBucket(.{ .bucket_name = bucket_name });
-    defer _ = client.deleteBucket(.{ .bucket_name = bucket_name }) catch {};
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     var uploader = client.uploader(.{});
 
     // Test text file upload
     {
         const s3_key = "text/sample.txt";
-        try uploader.uploadFile(bucket_name, s3_key, "tests/integration/assets/sample.txt");
+        try uploader.uploadFile(
+            bucket_name,
+            s3_key,
+            "tests/integration/assets/sample.txt",
+        );
 
         // Verify uploaded content
-        const downloaded = try client.getObject(.{ .bucket_name = bucket_name, .key = s3_key });
+        const downloaded = try client.getObject(bucket_name, s3_key, .{});
         defer allocator.free(downloaded);
 
         // Read original file for comparison
@@ -264,7 +258,7 @@ test "file upload and download" {
         );
 
         // Verify uploaded content
-        const downloaded = try client.getObject(.{ .bucket_name = bucket_name, .key = s3_key });
+        const downloaded = try client.getObject(bucket_name, s3_key, .{});
         defer allocator.free(downloaded);
 
         // Read original file for comparison
@@ -292,7 +286,7 @@ test "file upload and download" {
 
     // Test file metadata and listing
     {
-        const objects = try client.listObjects(.{ .bucket_name = bucket_name });
+        const objects = try client.listObjects(bucket_name, .{});
         defer {
             for (objects) |object| {
                 allocator.free(object.key);
@@ -316,11 +310,11 @@ test "file upload and download" {
     }
 
     // Cleanup: Delete the uploaded files
-    try client.deleteObject(.{ .bucket_name = bucket_name, .key = "text/sample.txt" });
-    try client.deleteObject(.{ .bucket_name = bucket_name, .key = "json/config.json" });
+    try client.deleteObject(bucket_name, "text/sample.txt", .{});
+    try client.deleteObject(bucket_name, "json/config.json", .{});
 
     // Verify deletion
-    const remaining = try client.listObjects(.{ .bucket_name = bucket_name });
+    const remaining = try client.listObjects(bucket_name, .{});
     defer {
         for (remaining) |object| {
             allocator.free(object.key);
