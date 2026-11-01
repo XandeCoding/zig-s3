@@ -55,9 +55,23 @@ pub fn build(b: *std.Build) void {
         "Skip tests that do not match filters",
     ) orelse &.{};
 
+    const unit_test_module = b.createModule(.{
+        .root_source_file = b.path("src/s3/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const unit_test = b.addTest(.{
+        .root_module = unit_test_module,
+        .filters = test_filters,
+    });
+    unit_test.root_module.addImport("s3", s3_module);
+    const run_unit_test = b.addRunArtifact(unit_test);
+    const unit_test_step = b.step("unit-test", "Run unit tests");
+    unit_test_step.dependOn(&run_unit_test.step);
+
     // Integration tests
     const integration_test_module = b.createModule(.{
-        .root_source_file = b.path("tests/integration/bucket_and_objects_test.zig"),
+        .root_source_file = b.path("tests/integration/integration_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -71,8 +85,10 @@ pub fn build(b: *std.Build) void {
     const integration_test_step = b.step("integration-test", "Run integration tests");
     integration_test_step.dependOn(&run_integration_tests.step);
 
-    // Add integration tests to main test step
-    //test_step.dependOn(&run_integration_tests.step);
+    // Create a main test step to run unit and integration tests
+    const run_all_tests_step = b.step("test", "Run all tests");
+    run_all_tests_step.dependOn(&unit_test.step);
+    run_all_tests_step.dependOn(&integration_tests.step);
 
     // Add formatting
     const fmt = b.addFmt(.{

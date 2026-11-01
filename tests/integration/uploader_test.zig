@@ -171,6 +171,8 @@ test "ObjectUploader using multipart file upload" {
 
     // Create test bucket
     const bucket_name = "test-uploader";
+    try client.createBucket(bucket_name, .{});
+    defer _ = client.deleteBucket(bucket_name, .{}) catch {};
 
     var uploader = client.uploader(.{});
 

@@ -37,6 +37,24 @@ const abort_multipart_object = @import("object/abort_multipart_upload.zig");
 const put_multipart_object = @import("object/put_multipart_object.zig");
 const complete_multipart_object = @import("object/complete_multipart_upload.zig");
 
+test "unit tests" {
+    _ = .{
+        client,
+        object_uploader,
+        list_buckets,
+        create_bucket,
+        delete_bucket,
+        put_object,
+        get_object,
+        delete_object,
+        create_multipart_object,
+        list_multipart_object,
+        abort_multipart_object,
+        put_multipart_object,
+        complete_multipart_object,
+    };
+}
+
 /// Configuration for the S3 client handler.
 /// This includes AWS credentials and regional settings.
 pub const S3ClientConfig = struct {

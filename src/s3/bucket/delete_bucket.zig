@@ -75,6 +75,6 @@ test "delete bucket operations error handling" {
     // Test bucket not found
     try std.testing.expectError(
         error.BucketNotFound,
-        deleteBucket(test_client, .{ .bucket_name = "nonexistent-bucket" }),
+        deleteBucket(test_client, "nonexistent-bucket", .{}),
     );
 }

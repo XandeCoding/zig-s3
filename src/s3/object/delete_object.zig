@@ -49,5 +49,5 @@ test "delete object from inexistent bucket" {
 
     const bucket_name = "object-delete-objects-list";
 
-    try std.testing.expectError(deleteObject(test_client, bucket_name, "object_key", .{}));
+    try std.testing.expectError(S3Error.InvalidResponse, deleteObject(test_client, bucket_name, "object_key", .{}));
 }
