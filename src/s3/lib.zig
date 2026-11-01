@@ -17,8 +17,8 @@
 //! defer client.deinit();
 //!
 //! // Use the client
-//! try client.createBucket(.{ .bucket_name = "my-bucket" });
-//! try client.putObject(.{ .bucket_name = "my-bucket", .key = "hello.txt", .data = "Hello, S3!" });
+//! try client.createBucket("my-bucket", .{});
+//! try client.putObject("my-bucket", "hello.txt", "Hello, S3!", .{});
 //! ```
 const std = @import("std");
 const client = @import("client/implementation.zig");
