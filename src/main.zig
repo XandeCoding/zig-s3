@@ -30,7 +30,7 @@
 const std = @import("std");
 const s3 = @import("s3/lib.zig");
 
-fn loadEnvVars() !s3.S3ClientConfig {
+fn loadVars() !s3.S3ClientConfig {
     return s3.S3ClientConfig{
         .access_key_id = "admin",
         .secret_access_key = "admin",
@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Initialize S3 client
     std.log.info("Loading environment variables for S3 configuration", .{});
-    const config = try loadEnvVars(init);
+    const config = try loadVars(init);
     std.log.info("Environment variables loaded successfully", .{});
 
     std.log.info("Initializing S3 client", .{});
