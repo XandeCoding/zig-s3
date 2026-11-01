@@ -7,7 +7,7 @@ to a newer Zig version. It is currently under construction and subject to change
 
 [![Zig](https://img.shields.io/badge/Zig-0.17.0-orange.svg)](https://ziglang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/XandeCoding/zig-s3)
+[![Version](https://img.shields.io/badge/version-0.3.0-green.svg)](https://github.com/XandeCoding/zig-s3)
 
 A simple and efficient S3 client library for Zig, supporting AWS S3 and S3-compatible services.
 
