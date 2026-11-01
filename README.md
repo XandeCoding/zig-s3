@@ -1,15 +1,15 @@
 # 🚧 Under Construction
 
-This project is currently under construction and subject to changes.
+This project is a fork of [algoflows/zig-s3](https://github.com/algoflows/zig-s3) that I am refactoring and updating
+to a newer Zig version. It is currently under construction and subject to change.
 
 # S3 Client for Zig 🚀
 
-[![Zig](https://img.shields.io/badge/Zig-0.16.0-orange.svg)](https://ziglang.org)
+[![Zig](https://img.shields.io/badge/Zig-0.17.0-orange.svg)](https://ziglang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](https://github.com/algoflows/zig-s3)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/XandeCoding/zig-s3)
 
-A simple and efficient S3 client library for Zig, supporting AWS S3 and
-S3-compatible services.
+A simple and efficient S3 client library for Zig, supporting AWS S3 and S3-compatible services.
 
 ## 📑 Table of Contents
 
@@ -38,7 +38,7 @@ S3-compatible services.
 - 🛡️ Memory-safe implementation using Zig's standard library
 - 🧪 Comprehensive test suite:
   - Unit tests for all components
-  - Integration tests with MinIO and RustFS
+  - Integration tests with RustFS
   - Test assets for real-world scenarios
 
 ## 🛤️ Roadmap
@@ -50,12 +50,10 @@ S3-compatible services.
 - [ ] Multipart upload with dinamic chunk size
 - [ ] Add all S3 operation options to functions
 - [ ] Use UTC at creating amz credentials
-- [ ] Run tests concurrently
-
 
 ## 🔧 Prerequisites
 
-- Zig 0.16.0 or newer
+- Zig 0.17.0 or newer
 - For integration testing: Docker (optional, for running MinIO or RustFS)
 
 ## 📥 Installation
@@ -67,9 +65,8 @@ Add the package to your `build.zig.zon`:
     .name = "your-project",
     .version = "0.2.0",
     .dependencies = .{
-        .s3 = .{
-            .url = "https://github.com/algoflows/zig-s3/archive/v0.3.0.tar.gz",
-            // Don't forget to update hash after publishing
+        .zig_s3 = .{
+            .url = "git+https://github.com/XandeCoding/zig-s3.git#6b74445913fd2cec4c7784ca472da50a34c02fdb",
             .hash = "...",
         },
     },
@@ -79,11 +76,22 @@ Add the package to your `build.zig.zon`:
 Then in your `build.zig`:
 
 ```zig
-const s3_dep = b.dependency("s3", .{
-    .target = target,
-    .optimize = optimize,
-});
-exe.addModule("s3", s3_dep.module("s3"));
+    const s3_dep = b.dependency("zig_s3", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const exe = b.addExecutable(.{
+        .name = "program",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                ...
+                .{ .name = "s3", .module = s3_dep.module("s3") },
+            },
+        }),
+    });
 ```
 
 ## 🚀 Quick Start
@@ -120,7 +128,8 @@ pub fn main(init: std.process.Init) !void {
 
 ### S3Client
 
-The main client interface for S3 operations.
+The main client interface for S3 operations. _Although configuration options are not currently required, 
+an options parameter is accepted to preserve backward compatibility in future releases._
 
 ```zig
 const client = try s3.S3Client.init(allocator, .{
@@ -211,7 +220,7 @@ tests.
 
 ## 🛠️ Development
 
-- Written in Zig 0.16.0
+- Written in Zig 0.17.0
 - Uses only standard library (no external dependencies)
 - Memory safe with proper allocation and cleanup
 - Follows Zig style guide and best practices
@@ -228,9 +237,9 @@ tests.
 ## 👥 Community
 
 - 📫 Report issues on
-  [GitHub Issues](https://github.com/algoflows/zig-s3/issues)
+  [GitHub Issues](https://github.com/XandeCoding/zig-s3/issues)
 - 💬 Join discussions in
-  [GitHub Discussions](https://github.com/algoflows/zig-s3/discussions)
+  [GitHub Discussions](https://github.com/XandeCoding/zig-s3/discussions)
 - 🌟 Star the repository if you find it helpful!
 
 ## 📄 License
@@ -239,6 +248,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
+- We acknowledge the AlgoFlow S3 repository for providing the foundation upon which this project was built. 
 - AWS S3 Documentation
 - MinIO Documentation
 - Zig Standard Library
