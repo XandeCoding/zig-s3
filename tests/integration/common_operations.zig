@@ -1,5 +1,6 @@
 const std = @import("std");
 const s3 = @import("s3");
+const utils = @import("utils.zig");
 
 const testing = std.testing;
 const io = testing.io;
@@ -17,17 +18,8 @@ const TestError = error{
     // ... other errors ...
 };
 
-fn createS3ClientConfig() !s3.S3ClientConfig {
-    return s3.S3ClientConfig{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-west-1",
-        .endpoint = "http://localhost:9000",
-    };
-}
-
 test "initialize client" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -36,7 +28,7 @@ test "initialize client" {
 }
 
 test "validate endpoint" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     // Validate endpoint is not empty and accessible
     if (config.endpoint) |endpoint| {
         if (endpoint.len == 0) {
@@ -60,7 +52,7 @@ test "validate endpoint" {
 }
 
 test "create simple bucket" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
     const bucket_name = "integration-test-bucket-123";
@@ -90,7 +82,7 @@ test "create simple bucket" {
 }
 
 test "bucket operations with custom endpoint" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -101,7 +93,7 @@ test "bucket operations with custom endpoint" {
 }
 
 test "create buckets with special characters" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -168,7 +160,7 @@ test "create buckets with special characters" {
 }
 
 test "list objects basic" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -215,7 +207,7 @@ test "list objects basic" {
 }
 
 test "list objects empty bucket" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -231,7 +223,7 @@ test "list objects empty bucket" {
 }
 
 test "list objects with multiple prefixes" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -293,7 +285,7 @@ test "list objects with multiple prefixes" {
 }
 
 test "list objects pagination with various sizes" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -373,7 +365,7 @@ test "list objects pagination with various sizes" {
 }
 
 test "list objects with special characters in prefix" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -415,7 +407,7 @@ test "list objects with special characters in prefix" {
 }
 test "pagination and prefixes" {
     // Initialize client
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -537,7 +529,7 @@ test "pagination and prefixes" {
 
 test "put large object" {
     // Initialize client
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -564,7 +556,7 @@ test "put large object" {
 
 test "put objects with valid keys" {
     // Initialize client
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 

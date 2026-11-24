@@ -1,21 +1,13 @@
 const std = @import("std");
 const s3 = @import("s3");
+const utils = @import("utils.zig");
 
 const testing = std.testing;
 const io = testing.io;
 const allocator = testing.allocator;
 
-fn createS3ClientConfig() !s3.S3ClientConfig {
-    return s3.S3ClientConfig{
-        .access_key_id = "admin",
-        .secret_access_key = "admin",
-        .region = "us-west-1",
-        .endpoint = "http://localhost:9000",
-    };
-}
-
 test "upload simple string" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -46,7 +38,7 @@ test "upload simple string" {
 }
 
 test "full client lifecycle" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -165,7 +157,7 @@ test "full client lifecycle" {
 }
 
 test "ObjectUploader using multipart file upload" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
@@ -215,7 +207,7 @@ test "ObjectUploader using multipart file upload" {
 }
 
 test "file upload and download" {
-    const config = try createS3ClientConfig();
+    const config = try utils.createS3ClientConfig();
     var client = try s3.S3Client.init(allocator, io, config);
     defer client.deinit();
 
