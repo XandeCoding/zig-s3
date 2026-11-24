@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       rustfs:
-        image: rustfs/rustfs:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+        image: rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
         ports:
           - 9000:9000
     name: Format and Test
