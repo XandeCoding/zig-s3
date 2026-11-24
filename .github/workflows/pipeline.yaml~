@@ -1,0 +1,32 @@
+name: Release
+on:
+  - push
+permissions: {}
+jobs:
+  zizmor:
+    runs-on: ubuntu-slim
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run zizmor 🌈
+        uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3
+  test:
+    runs-on: ubuntu-latest
+    services:
+      rustfs:
+        image: rustfs/rustfs:1.0.6
+      ports:
+        - 9000:9000
+    name: Format and Test
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+      - run: zig fmt .
+      - run: zig build test
+
