@@ -35,6 +35,8 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.17.1
-      - run: zig fmt .
-      - run: zig build test
+      - name: Format
+        run: zig fmt .
+      - name: Test
+        run: zig build test
 
