@@ -10,8 +10,6 @@ jobs:
       security-events: write
       contents: read
       actions: read
-    with:
-      online-audits: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -19,11 +17,13 @@ jobs:
           persist-credentials: false
       - name: Run zizmor 🌈
         uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3
+        with:
+          online-audits: false
   test:
     runs-on: ubuntu-latest
     services:
       rustfs:
-        image: rustfs/rustfs:1.0.6
+        image: rustfs/rustfs:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
         ports:
           - 9000:9000
     name: Format and Test
