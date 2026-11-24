@@ -22,12 +22,14 @@ jobs:
     services:
       rustfs:
         image: rustfs/rustfs:1.0.6
-      ports:
-        - 9000:9000
+        ports:
+          - 9000:9000
     name: Format and Test
     steps:
-      - uses: actions/checkout@v3
-      - uses: https://codeberg.org/mlugg/setup-zig@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: https://codeberg.org/mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
       - run: zig fmt .
       - run: zig build test
 
